@@ -1,0 +1,116 @@
+* FlowCL
+
+*WARNING: FlowCL is currently in beta! Both the code itself and the paradigm it aims to crystallize in code are subject to change.*
++ In addition, the project structure is in flux, and it is currently published primarly to get external overviews, criticism, and recommendations on relevant materials (e.g. similar projects or writing on similar concepts). This notification will be removed from the README when enough features have been implemented to provide an idea of how v1 of the API should be designed.
+
+FlowCL is a long-term project on my part, attempting to extend Common Lisp with the ability to focus programming on designing programs around information flow.
+
+FlowCL is intended to work in the same vein as "gradual typing", allowing for partial integration and different levels of integration into CL code.
+
+FlowCL will make use of existing libraries if appropriate, but will not compromise on its own vision for the sake of easy integration of those libraries. This also extends to encapsulating usage of external libraries, so as to not force the user to load any more of them than is necessary.
++ *However*, this is distinct from the goal of making FlowCL /compatible/ with usage of those libraries in the projects of its users; general drop-in capabilities remain a central goal of this project.
+
+Some key principles of the FlowCL project:
+
+- *Compatibility*: FlowCL strives to be compatible with code, libraries, and paradigms used by the framework's users.
+
+  Functionality will be encapsulated as much as possible (e.g. within function/procedure/object definitions), and external endpoints can ideally be added directly to your code with no change in operation or design (save, hopefully, for increased ease-of-coding and potentially also performance).
+
+  FlowCL will also attempt to use libraries such as "trivial-extensible-sequences" to make drop-in replacement even easier, by enabling compatibility with code that was designed for non-FlowCL structures.
+
+- *Scalability*: FlowCL is meant to be a basis upon which small and large projects are built. As such, it should allow composition of its elements into larger structures without significant compromises. Ease of use will be a particular target to maintain as code or data structures are composed into larger structures.
+
+  Another target of this goal is reliability. In a mature state, FlowCL will match the reliability of production level code, and be usable in the same.
+
+  Ideally, FlowCL code should also provide efficiency boosts to the user. In some cases this will be outweighed by other factors, such as ease of use. However, we aim to identify opportunities for our code to optimize not only based on its own structure, but also based on information gleaned from how it is being used in a larger context, allowing us to automate a significant portion of the optimization work that would normally be done manually by programmers. This is the same approach used by software such as TensorFlow, to allow users to easly build large systems without unnecessarily large hardware costs or loss of performance.
+
+- *Ease of use*: FlowCL aims for developers to easily use it.
+
+  In part, this is a longer-term goal to implement documentation and tutorials to ease comprehension and adoption of the project. In the shorter term, this aspect will be fulfilled primarly through clear, understandable naming and documentation within the code.
+
+  This goal also applies to the design of the framework itself. Endpoints intended for external use should be designed to easily integrate with each other and external code, such as through the creation of utilities for creating or manipulating FlowCL constructs (note that compatibility with native constructs would be a very nice feature for such utilities). In addition, where possible internal functionality should be constructed in such a way as to allow users to easily modify the system, without constantly breaking things or having to deal with excessive or obtuse interdependencies.
+
+- *Extensibility*: One of the strengths of CL is its strong culture of backward-compatibility. However, sometimes this can also impede the ability to modify and improve a project.
+
+  There are two main approaches to solve this issue. Firstly, we will design symbols intended as external endpoints to be as independent as possible from the internal implementations. This should allow us more freedom to improve the FlowCL project and the code of its users without any action on their part.
+
+  Secondly, we will not limit ourselves to publishing a single package. Once the FlowCL project has matured enough to have a stable API, we will suffix package names with the "v0.01" convention. The latest stable sub-version will be aliased to its version, and the latest stable version will be aliased to un-suffixed "default" package names (i.e. the package "flow-cl-v0.01" will be aliased to "flow-cl-v0", which will be aliased to "flow-cl"). Many projects implement this process via Github branches, but our approach allows both active developers and users to track package versions without dealing with branches or commit history, making it significantly easier for package users to contribute improvements.
+  + NOTE: "Major version" package names (e.g. "v1") are intended to be retained indefinitely. However, the minor versions underlying them (e.g. "v0.01", "v0.02", etc) are very likely to be discarded, and are mainly for development purposes. Once FlowCL is mature enough for the above system to be implemented, we *strongly recommend either pinning code to a major version or just using the default packages*.
+
+** Installation
+Place this repository somewhere ASDF or Quicklisp can find it as a local project, and then use `(ql:quickload :flow-cl)` (or `(asdf:load-system :flow-cl)`, which quicklisp wraps in its quickload feature).
+
+** Usage
+
+** Progress and Roadmap
+The current focus is to implement a gradual framework for lazy programming. This has been partially completed, and the lazy-cons and lazy-vector objects are currently usable (and compatible with sequence functions due to `trivial-extensible-sequences`), as is the core thunk object. For more information, look at the code for lazy programming.
+
+Future plans are vaguer, but currently involve the following points:
+- Complete the lazy programming sub-framework.
+
+  - Improving the efficiency.
+
+    Time-wise, the lazy-vector structure matches native code by applying functions to its internal vector cache, providing reasonable time efficiency.
+
+    However, the space-efficiency of the laziness system is rather bad; for extremely large inputs, I've sometimes run into heap failures without explicit garbage-collection.
+    We need to find ways to reduce the space taken by lazy structures
+    + lazy-cons (which is also currently the backbone of lazy-vector) is a significant offender here; reimplementing it to use an internal list cache like lazy-vector, and perhaps using the cdr to store tails when lazy-consing multiple lazy sequences, might work to resolve this issue, and could also allow reusing the lazy-vector code which permits sharing of evaluation where possible.
+
+      However, this has the issue that it forces the user to only use structures which cache their results. This is not necessarily a good thing, considering that they may be using lazy sequences to process data too large to actively keep in memory. Further thought is required here.
+
+    + lazy-vector should benefit from explicitly using a function as its generator rather than shelling out to lazy-cons objects. lazy-vec may not even need to be reworked; if we can figure out another function template for lazy-vectors *not* derived from lazy-conses, we will likely not need to change the lazy-vector so much that lazy-vec can't just be tweaked a little to store and retrieve the input lazy-cons in the right place.
+
+    + NOTE: If lazy-vector stops being a subclass of lazy-cons, we will need to rework the class architecture. I think a good approach would be to make a "lazy-sequence" object defining the shared slots and specializing most of the generic methods, with only the lowest-level methods directly specializing on different lazy sequences
+
+    We also might want to optimize their garbage collection (perhaps using weak-pointers for reuse of defunct objects that haven't been garbage collected?).
+
+  - Improving the feature-set
+
+    Currently, the only features implemented are the core thunk class, and lazy-cons and lazy-vector as replacement sequences for lists and vectors.
+
+    One direction for progress is incorporating streams into the library, allowing them to be wrapped as lazy-sequences. We may need to restrict this functionality considering that you can't go backwards in a stream, but our lazy stream object should at least allow the composition of mapping, filtration, etc that lazy sequences currently permit.
+
+    + Perhaps this could be done via documentation suggesting restrictions on usage to avoid making calls that are supposed to refer to the same items in the stream, and/or creating a macro for stream interaction and which inherently contains such restrictions.
+
+      The macro approach seems particularly interesting. If the user can specify a set of sequences which are meant to receive the data from the stream, then the macro could internally create a cache object which only retains those aspects of the stream which are necessary given the current state of the various sequences. Including any non-lazy sequences would force full reading and caching of the stream, but lazy-sequences would wait on cache reads and stream-reads (to extend the cache) based on which elements were forced to evaluate.
+
+      Once no objects were waiting on a value of the macro's internal cache, that value could be discarded (possibly using the :offset value with periodic copy-seq commands, if using a lazy-vector?). This would allow a rolling track on only those values which are necessary, without the user needing to manually program such caching.
+
+      However, this method requires either lazy sequences which discard data automatically (e.g. the current implementation of lazy-cons, if we make the old heads space-efficient enough to be feasible for production); or, preferably, a method to update the list of receiving sequences, so that the user can decide when to discard old data. Perhaps just allowing setf on the defined sequences would be enough for this.
+      + Incidentally, having this feature in the core macro would make it much easier to implement a convenience macro on top of it, which tracks the size of the receiving sequences and automatically replaces them with copies (if the user is confident that only the current datapoint and/or a preset amount of history will be relevant).
+
+    We also need to explicitly develop the design to optionally permit interaction without preservation of values (either directly in the code or through making it easy to discard cached information). This is necessary for processing of extremely large values (as mentioned in the musing on stream wrappers above), but seems at odds with the goal of maintaining performance (unless calculating the step function is *extremely* computation-heavy); further thought is required here.
+
+  - Improving the integration.
+
+    The lazy-programming framework is currently placed *literally just in the flow-cl package*. The first priority here is moving it to its own package and figuring out how the package architecture is going to work.
+
+    After that, I need to figure out how users will interact with this system. Obviously one mode is to use the enclosed lazy sequences as drop-in sequence objects compatible with Common Lisp sequence functions (assuming your implementation is compatible with trivial-extensible-sequences, or you use the appropriate fallback code).
+
+    Another mode would be to make specific use-cases for lazy-sequences (such as wrapping streams) and writing drop-in macros to implement that specific feature.
+
+    Ideally, another mode will be added using a macro to implement a DSL for lazy programming. The result of code written in that DSL would be the output of the form, allowing for integration into normal CL code. However, *this is a minor goal*, and takes a backseat to working on other subsystems of the overall FlowCL framework.
+
+- Develop a framework for flow-based programming (currently conceptualized as *defining fully self-contained programmatic structures which compose as directed node-edge graphs into larger structures*).
+
+  This paradigm makes it far easier to approach problem-solving as the construction of layered domain-specific modules or frameworks.
+
+  - A key goal of this framework should be to allow easily converting code into and out of it. The inwards direction allows for easy adoption of the framework, while the outward direction would be useful for user-designed code optimizations (and, before the project reaches maturity, escaping its limitations).
+
+  - Ideally, this system should give first-class support to lexical construction of these flow components, to allow easy integration with functional-style Common Lisp code (while also being unlikely to impede other paradigms, as functional constructs can often be integrated into larger non-imperative procedures).
+
+  - Ideally, this system should optimize the internal implementation of flow components, due to the independence guarantee (as well as optional user-defined attributes of said components), allowing for larger systems to be easily created while maintaining decent performance.
+
+- ...
+
+** Author
+
++ Swapneil Singh
+
+** Copyright
+
+Copyright (c) 2023 Swapneil Singh
+
+** License
+
+Licensed under the MIT License.
