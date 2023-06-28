@@ -31,23 +31,27 @@
                    (c (drops 1 b))
                    (d (takes 3 c)))
               (thunk-value d)
-              (format t "~%~@{~a~%~}" a b c d))
-            "
-#<[lazy:1 3 5 7 9...]>
-#<[lazy:1 3 5 7...]>
-#<[lazy:3 5 7...]>
-#<[lazy:3 5 7]>
-")))
+              (format t "~@{~a~#[~:; ~]~}" a b c d))
+            "#<[lazy:1 3 5 7 9...]> #<[lazy:1 3 5 7...]> #<[lazy:3 5 7...]> #<[lazy:3 5 7]>"))
+    (ok (outputs
+            (let* ((a (lazy-vec (lazy-list 1 3 5 7 9 11 12 13 15 17)))
+                   (b (takes #'oddp a))
+                   (c (drops 1 b))
+                   (d (takes 5 c)))
+              (thunk-value d)
+              (format t "~@{~a~#[~:; ~]~}" a b c d))
+            "#<[lazy:1 3 5 7 9 11 12...]> #<[lazy:1 3 5 7 9 11]> #<[lazy:3 5 7 9 11]> #<[lazy:3 5 7 9 11]>")))
   (testing "`get-current-contents' doesn't force further evaluation on `lazy-vector'."
-    (ok (outputs
-            (let ((a (lazy-vec (lazy-list 1 3 5 7 9 11 12 13 15 17))))
-              (format t "~a" (get-current-contents a)))
-            "[]"))
-    (ok (outputs
-            (let ((a (lazy-vec (lazy-list 1 3 5 7 9 11 12 13 15 17))))
-              (thunk-value (takes 3 (drops 1 (takes #'oddp a))))
-              (format t "~a" (get-current-contents a)))
-            "[1 3 5 7 9]"))))
+    (ok (let* ((a (lazy-vec (lazy-list 1 3 5 7 9 11 12 13 15 17)))
+               (b (get-current-contents a)))
+          (and (vectorp b) (zerop (length b)))))
+    (ok (let* ((a (lazy-vec (lazy-list 1 3 5 7 9 11 12 13 15 17)))
+               (_ (thunk-value (takes 3 (drops 1 (takes #'oddp a)))))
+               (b (get-current-contents a)))
+          (declare (ignore _))
+          (and (vectorp b)
+               (= (length b) 5)
+               (every #'= b (list 1 3 5 7 9)))))))
 
 ;;; TODO: Figure out how to use signals in deftest without compiler errors
 ;;; NOTE: test-testing-framework doesn't have any issues with "error", somehow,
