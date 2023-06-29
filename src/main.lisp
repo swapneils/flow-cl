@@ -235,13 +235,15 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
 
 ;; TODO: Allow null sequences
 ;; TODO: Maybe replace the internal lazy-cons with just its generator function?
+;; TODO: Use `get-current-contents' for initialization, with the second return value as `:tail'?
+
 (defun lazy-vec (genseq
                  &optional
                    (arr (make-array 0 :adjustable t :fill-pointer t))
                    (offset 0))
-  "A function to wrap a `lazy-cons' into a `lazy-vector'.
-`lazy-vector' objects are more efficient, retain fewer intermediary objects, and can drop down to native vector-manipulation code for some operations.
-However, they cache their full contents internally, which might be a problem for long sequences of high-memory objects."
+  "A function to wrap a `sequence' (such as a `lazy-cons') into a `lazy-vector'.
+`lazy-vector' objects are more efficient than `lazy-cons', retain fewer intermediary objects, and can drop down to native vector-manipulation code for some operations.
+However, they internally cache realized contents, which likely requires manually replacing them (e.g. with `nthcdrs') when dealing with long sequences of high-memory objects."
   (let ((li (make-instance 'lazy-vector))
         (arr (cond
                ((adjustable-array-p arr) arr)
@@ -389,21 +391,33 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
   (lazy-cons x (lazy-iterate f (funcall f x))))
 
 
+;;; TODO: Test the second return value.
 (defgeneric get-current-contents (thunk)
   (:documentation "A function to get the currently-realized value of a thunk without inducing further evaluation.
-Returns non-thunk inputs unchanged."))
-(defmethod get-current-contents ((val t))
-  val)
+Returns non-thunk inputs unchanged.
+The second return value contains the 'unrealized remainder' of the input thunk. For realized thunks or non-thunks, this is `nil'."))
+(defmethod get-current-contents (val)
+  (values val nil))
 (defmethod get-current-contents ((val thunk))
-  (when (thunk-realized val)
-      (:head val)))
+  (if (thunk-realized val)
+      (values (:head val) nil)
+      (values nil val)))
 (defmethod get-current-contents ((seq lazy-cons))
-  (iter
-    (for cell initially seq then (tail cell))
-    (while (and cell (thunk-realized cell)))
-    (collect (head cell))))
+  (let ((cell seq))
+    (values
+     (iter
+       (while (and cell (thunk-realized cell)))
+       (collect (head cell))
+       (setf cell (tail cell)))
+     cell)))
 (defmethod get-current-contents ((seq lazy-vector))
-  (subseq (:head seq) (if (:offset seq) (:offset seq) 0)))
+  (values
+   (subseq (:head seq) (if (:offset seq) (:offset seq) 0))
+   (unless (thunk-realized seq)
+     (if (:realized-count seq)
+         (nthcdrs (:realized-count seq) seq)
+         seq))))
+
 
 (export '(get-current-contents))
 
