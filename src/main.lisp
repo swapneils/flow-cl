@@ -967,6 +967,9 @@ If `seq' is nil, the output is nil."))
                            :key key))
   seq)
 
+(defmethod sequences:reverse ((seq lazy-cons))
+  (apply #'lazy-values (thunk-value seq)))
+
 (defmethod sequences:nreverse ((seq lazy-vector))
   (thunk-value seq)
   (setf (:head seq) (coerce (nreverse (slot-value seq 'head)) 'simple-vector))
@@ -982,6 +985,75 @@ If `seq' is nil, the output is nil."))
   (and (thunk-realized seq)
        (not (tail seq))
        (zerop (length seq))))
+
+;;; NOTE: For some reason the lazy-cons iterator doesn't work for lazy-vectors.
+;;; TODO: Ensure the above note isn't because of a bug in the lazy-vec synchronization code
+(defmethod sequences:make-sequence-iterator ((seq lazy-cons) &key from-end start end)
+  (let* ((seq (if (or start end)
+                 (subseq seq
+                         (or start 0)
+                         (or end nil))
+                 seq))
+         (seq (if from-end (reverse seq) seq)))
+    (values (cons (if (not from-end)
+                      0
+                      (1- (length seq)))
+                  seq)
+            nil
+            from-end
+            (lambda (seq state from-end)
+              (declare (ignore seq))
+              (cons (if (not from-end)
+                        (1+ (head state))
+                        (1- (head state)))
+                    (tail (tail state))))
+            (lambda (seq state limit from-end)
+              (declare (ignore limit from-end))
+              (or (sequences:emptyp (tail state))
+                  (not (elt seq (head state)))))
+            (lambda (seq state)
+              (elt seq (head state)))
+            (lambda (value seq state)
+              (setf (elt seq (head state)) value))
+            (lambda (seq state)
+              (declare (ignore seq))
+              (head state))
+            (lambda (seq state)
+              (declare (ignore seq))
+              (copy-tree state)))))
+
+(defmethod sequences:make-sequence-iterator ((seq lazy-vector) &key from-end start end)
+  (let* ((seq (if (or start end)
+                 (subseq seq
+                         (or start 0)
+                         (or end nil))
+                 seq))
+         (seq (if from-end (reverse seq) seq)))
+    (values (if (not from-end)
+                0
+                (1- (length seq)))
+            nil
+            from-end
+            (lambda (seq state from-end)
+              (declare (ignore seq))
+              (if (not from-end)
+                  (1+ state)
+                  (1- state)))
+            (lambda (seq state limit from-end)
+              (declare (ignore limit from-end))
+              (handler-case
+                  (not (elt seq state))
+                (error () t)))
+            (lambda (seq state)
+              (elt seq state))
+            (lambda (value seq state)
+              (setf (elt seq state) value))
+            (lambda (seq state)
+              (declare (ignore seq))
+              state)
+            (lambda (seq state)
+              (declare (ignore seq))
+              state))))
 
 ;; TODO: Implement more sequence functions
 
