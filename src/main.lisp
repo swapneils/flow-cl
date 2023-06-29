@@ -78,8 +78,10 @@ Primarily intended as a convenience to avoid variable capture in macros."
                    (list (progn ,@body))))))
 
 
-;;; Evaluating a lazy-cons currently involves instantiating all tails.
-;;; TODO: MAKE THIS MORE SPACE-EFFICIENT!!!!
+;;; TODO: Make a `lazy-seq' superclass (likely identical slots to `lazy-cons') for organization purposes?
+
+;;; NOTE: Evaluating a lazy-cons currently involves instantiating all tails.
+;;; TODO: MAKE THESE MORE SPACE-EFFICIENT!!!!
 (defclass lazy-cons (thunk sequences:sequence)
   ((head :initform nil :initarg :head :accessor :head)
    (tail :initform nil :initarg :tail :accessor :tail)))
@@ -236,7 +238,6 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
 ;; TODO: Allow null sequences
 ;; TODO: Maybe replace the internal lazy-cons with just its generator function?
 ;; TODO: Use `get-current-contents' for initialization, with the second return value as `:tail'?
-
 (defun lazy-vec (genseq
                  &optional
                    (arr (make-array 0 :adjustable t :fill-pointer t))
@@ -317,8 +318,7 @@ Does not evaluate its arguments, unlike `lazy-values'."
   (when vals
     `(lazy-cons ,(car vals) (lazy-list ,@(cdr vals)))))
 
-;; Warning: lazy-cat currently cannot have args
-;; relying on the value of the result.
+;; NOTE: lazy-cat currently cannot have args relying on the value of the result.
 ;; Example failing test:
 ;; (let ((tempa))
 ;;   (setf tempa
@@ -779,7 +779,12 @@ If `seq' is nil, the output is nil."))
                :end end
                :key key)
       (let* ((current (get-current-contents seq))
-             (discovered (and current (find-if pred current :from-end from-end :start start :end end :key key))))
+             (discovered (and current
+                              (find-if pred current
+                                       :from-end from-end
+                                       :start start
+                                       :end end
+                                       :key key))))
         (if discovered
             discovered
             (let* (
@@ -971,7 +976,6 @@ If `seq' is nil, the output is nil."))
   (thunk-value seq)
   (sequences:nreverse (copy-seq seq)))
 
-;; TODO: See if I need to implement emptyp
 (defmethod sequences:emptyp ((seq lazy-cons))
   (null seq))
 (defmethod sequences:emptyp ((seq lazy-vector))
