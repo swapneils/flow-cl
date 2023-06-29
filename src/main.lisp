@@ -52,8 +52,12 @@ Primarily intended as a convenience to avoid variable capture in macros."
 
 
 
+;;; TODO: Look into whether MOP can define how classes are stored.
+;;; Considering the space issues we're having at >1,000,000 lazy-conses,
+;;; storing them as e.g. alists would significantly increase usability.
+
 ;;; Core
-(defclass thunk (standard-object)
+(defclass thunk ()
   ((realized :initform nil
              :initarg :realized
              :accessor :thunk)
@@ -74,11 +78,13 @@ Primarily intended as a convenience to avoid variable capture in macros."
                    (list (progn ,@body))))))
 
 
+;;; Evaluating a lazy-cons currently involves instantiating all tails.
+;;; TODO: MAKE THIS MORE SPACE-EFFICIENT!!!!
 (defclass lazy-cons (thunk sequences:sequence)
   ((head :initform nil :initarg :head :accessor :head)
    (tail :initform nil :initarg :tail :accessor :tail)))
 
-(defclass lazy-vector (lazy-cons)
+(defclass lazy-vector (lazy-cons thunk sequences:sequence)
   ((head :initform (make-array 0 :adjustable t :fill-pointer t) :initarg :head :accessor :head)
    (offset :initform 0 :initarg :offset :accessor :offset)
    (realized-count :initform 0 :accessor :realized-count)))
@@ -86,6 +92,8 @@ Primarily intended as a convenience to avoid variable capture in macros."
 
 (defgeneric thunk-realized (thunk)
   (:documentation "A function for checking if a thunk object is realized. Specializes as necessary for thunk subclasses."))
+(defmethod thunk-realized ((thunk t))
+  t)
 (defmethod thunk-realized ((thunk thunk))
   (slot-value thunk 'realized))
 (defmethod thunk-realized ((li lazy-vector))
@@ -227,10 +235,10 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
 
 ;; TODO: Allow null sequences
 ;; TODO: Maybe replace the internal lazy-cons with just its generator function?
-(defun lazy-vec (lcell
-                     &optional
-                       (arr (make-array 0 :adjustable t :fill-pointer t))
-                       (offset 0))
+(defun lazy-vec (genseq
+                 &optional
+                   (arr (make-array 0 :adjustable t :fill-pointer t))
+                   (offset 0))
   "A function to wrap a `lazy-cons' into a `lazy-vector'.
 `lazy-vector' objects are more efficient, retain fewer intermediary objects, and can drop down to native vector-manipulation code for some operations.
 However, they cache their full contents internally, which might be a problem for long sequences of high-memory objects."
@@ -241,25 +249,26 @@ However, they cache their full contents internally, which might be a problem for
                                                                :initial-contents arr
                                                                :adjustable t :fill-pointer t))
                (t (make-array 0 :adjustable t :fill-pointer t)))))
-    (let ((lcell lcell))
+    (let ((genseq genseq))
       (iter
-        (while (and lcell (thunk-realized lcell)))
+        (while (and genseq (thunk-realized genseq)))
         (for i from 0)
-        (while (< (length arr) 2048))
-        (vector-append! arr (head lcell))
-        (setf lcell (tail lcell))
+        (while (or (not (< 0 offset 2048)) (< (length arr) 2048)))
+        (vector-append! arr (head genseq))
+        (setf genseq (tail genseq))
         (finally
          (setf (slot-value li 'head) arr)
-         (setf (slot-value li 'tail) lcell)
+         (setf (slot-value li 'tail) genseq)
          (setf (slot-value li 'offset) offset)
-         (setf (slot-value li 'realized-count)
-               (length arr))))
-      (if (> (slot-value li 'realized-count) 2048)
-          (if (< offset (length arr))
-              (lazy-vec lcell (subseq arr offset))
-              (lazy-vec lcell))
+         (setf (slot-value li 'realized-count) (length arr))))
+      ;; TODO: Refactor the below check
+      (if (and (< 0 offset (length arr))
+               (> (slot-value li 'realized-count) 2048))
+          (if (or t (< offset (length arr)))
+              (lazy-vec genseq (subseq arr offset))
+              (lazy-vec genseq))
           (progn
-            (unless lcell (setf (slot-value li 'realized) t))
+            (unless genseq (setf (slot-value li 'realized) t))
             (subst-gensyms (gen-func cell realizeds)
               (labels ((gen-func ()
                          (let ((cell (slot-value li 'tail))
@@ -587,7 +596,7 @@ If `seq' is nil, the output is nil."))
 ;; TODO: Make maps and filters check emptyp, to avoid the error in the following:
 ;;; (thunk-value (maps #'1+ (lazy-vec (lazy-values))))
 (defun maps (f s &rest others)
-  (declare (optimize space speed) (function pred))
+  (declare (optimize space speed) (function f))
   (subst-gensyms (inner-f inner-s inner-others)
     (let ((inner-f f)
           (inner-s s)
@@ -847,33 +856,39 @@ If `seq' is nil, the output is nil."))
   )
 
 (defmethod sequences:sort ((seq lazy-cons) pred &key key)
-  (declare (optimize speed space (debug 0)))
+  (declare (optimize speed space))
   (labels ((srt (initstack)
              (let ((stack initstack))
                (loop
                  (let ((stack-head (head stack))
                        (stack-rest (tail stack)))
-                   (let* (
-                          (pivot (head stack-head))
-                          (pivot-tail (tail stack-head))
-                          ;; (pivot-temp (when stack-head
-                          ;;               (sort (thunk-value (takes 2 stack-head)) pred)))
-                          ;; (pivot (head pivot-temp))
-                          ;; (pivot-tail (remove pivot stack-head :count 1))
-                          )
-                     (unless (null pivot)
-                       (labels ((before-p (v) (funcall pred v pivot)))
-                        (let* ((before-pivot (filters before-p pivot-tail))
-                               (after-pivot (filters (complement before-p) pivot-tail))
-                               (new-stack (if (null after-pivot)
-                                              stack-rest
-                                              (cons after-pivot stack-rest))))
-                          (if (null before-pivot)
-                              (return (lazy-cons pivot (srt new-stack)))
-                              (setf stack (lazy-cons before-pivot (lazy-cons (list pivot) new-stack)))))))))))))
-    (srt (list (if key (maps key seq) seq)))))
+                   (unless (null stack-head)
+                     (let (
+                           (pivot (head stack-head))
+                           (pivot-tail (tail stack-head))
+                           )
+                       (labels ((before-p (v)
+                                  (declare (optimize speed space))
+                                  (funcall pred v pivot)))
+                         (let ((before-pivot (thunk-value (filters #'before-p pivot-tail)))
+                               (after-pivot (filters (complement #'before-p) pivot-tail)))
+                           (let ((new-stack (if after-pivot
+                                                (cons after-pivot stack-rest)
+                                                stack-rest)))
+                             (if before-pivot
+                                 (setf stack
+                                       ;; (lazy-list* before-pivot
+                                       ;;             (list pivot)
+                                       ;;             new-stack)
+                                       (cons before-pivot
+                                             (cons (list pivot)
+                                                   new-stack))
+                                       )
+                                 (return (lazy-cons pivot (srt new-stack))))))))))))))
+    (srt (list (thunk-value (if key (maps key seq) seq))))))
 
 (defmethod sequences:sort ((seq lazy-vector) pred &key key)
+  (declare (optimize space speed))
   (thunk-value seq)
   (let ((seq (copy-seq seq)))
     (thunk-value seq)
@@ -881,7 +896,33 @@ If `seq' is nil, the output is nil."))
           (sort (slot-value seq 'head)
                 pred
                 :key key))
-    seq))
+    seq)
+
+  ;;; TODO: Refactor heapq sort to work with lazy vectors?
+  ;; (labels ((srt (initstack)
+  ;;            (let ((stack initstack))
+  ;;              (loop
+  ;;                (let ((stack-head (head stack))
+  ;;                      (stack-rest (tail stack)))
+  ;;                  (let* (
+  ;;                         (pivot (head stack-head))
+  ;;                         (pivot-tail (tail stack-head))
+  ;;                         )
+  ;;                    (unless (null pivot)
+  ;;                      (labels ((before-p (v) (funcall pred v pivot)))
+  ;;                        (let ((before-pivot (filters #'before-p pivot-tail))
+  ;;                              (after-pivot (filters (complement #'before-p) pivot-tail)))
+  ;;                          (let ((new-stack (if after-pivot
+  ;;                                               (cons after-pivot stack-rest)
+  ;;                                               stack-rest)))
+  ;;                            (if (null before-pivot)
+  ;;                                (return (lazy-cons pivot (srt new-stack)))
+  ;;                                (setf stack
+  ;;                                      ;; (lazy-cons before-pivot (lazy-cons (list pivot) new-stack))
+  ;;                                      (lazy-list* before-pivot (list pivot) new-stack)
+  ;;                                      ))))))))))))
+  ;;   (srt (list (if key (maps key seq) seq))))
+  )
 
 (defmethod sequences:remove-duplicates ((seq lazy-vector) &key from-end (test #'eql) test-not (start 0) end key)
   (thunk-value seq)
@@ -920,7 +961,9 @@ If `seq' is nil, the output is nil."))
 (defmethod sequences:emptyp ((seq lazy-cons))
   (null seq))
 (defmethod sequences:emptyp ((seq lazy-vector))
-  (and (thunk-realized seq) (zerop (length seq))))
+  (and (thunk-realized seq)
+       (not (tail seq))
+       (zerop (length seq))))
 
 ;; TODO: Implement more sequence functions
 
