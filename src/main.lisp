@@ -50,10 +50,23 @@ Primarily intended as a convenience to avoid variable capture in macros."
   (vector-push-extend val vec)
   vec)
 
+;;; Could be used to compile-check that classes properly implement protocols?
+;;; NOTE: Move out into a protocols/interfaces package to publish separately
+;;; NOTE: Remove closer-mop dependency when removing this?
+(defun method-exists (fun &rest classes)
+  (find-if (lambda (args) (find-method fun '() args nil))
+           (apply #'map-product #'list
+                  (mapcar (compose #'closer-mop:compute-class-precedence-list
+                                   (lambda (%)
+                                       (if (subtypep (type-of %) 'class)
+                                         %
+                                         (find-class %))))
+                          classes))))
+
 
 
 ;;; TODO: Look into whether MOP can define how classes are stored.
-;;; Considering the space issues we're having at >1,000,000 lazy-conses,
+;;; Considering the space issues we're having at >1,000,000-element lazy-conses,
 ;;; storing them as e.g. alists would significantly increase usability.
 
 ;;; Core
@@ -148,7 +161,7 @@ Thunks and lists of thunks are forced to evaluate, while non-thunks are passed t
 (defmethod thunk-value ((thunk thunk))
   (force-thunk thunk))
 (defmethod thunk-value ((li list))
-  (mapcar #'thunk-value li))
+  (serapeum:leaf-map #'thunk-value li))
 (defmethod thunk-value ((non-thunk t))
   non-thunk)
 
@@ -248,7 +261,7 @@ However, they internally cache realized contents, which likely requires manually
   (let ((li (make-instance 'lazy-vector))
         (arr (cond
                ((adjustable-array-p arr) arr)
-               ((subtypep (type-of arr) 'sequence) (make-array (length arr)
+               ((serapeum:sequencep arr) (make-array (length arr)
                                                                :initial-contents arr
                                                                :adjustable t :fill-pointer t))
                (t (make-array 0 :adjustable t :fill-pointer t)))))
@@ -281,8 +294,7 @@ However, they internally cache realized contents, which likely requires manually
                              (iter
                                (while (and cell (< realizeds (length arr))))
                                (setf cell (tail cell))
-                               (incf realizeds)
-                               )
+                               (incf realizeds))
                              (force-thunk cell)
                              (when (head cell)
                                (if (tail cell)
@@ -365,18 +377,18 @@ Does not evaluate its arguments, unlike `lazy-values'."
       (when seqs
         (apply #'lazy-cat seqs))
       (subst-gensyms (seq-head seq-tail others)
-          (let ((seq-head (head seq))
-                (seq-tail (tail seq))
-                (others seqs))
-            (lazy-cons seq-head (apply #'lazy-cat seq-tail others))))))
+        (let ((seq-head (head seq))
+              (seq-tail (tail seq))
+              (others seqs))
+          (lazy-cons seq-head (apply #'lazy-cat seq-tail others))))))
 
 (defun lazy-list*-internal (a &rest others)
   (subst-gensyms (x xs)
-   (labels ((initializer (x &rest xs)
-              (if (not xs)
-                  (thunk-value x)
-                  (lazy-cons (force-thunk x) (apply #'initializer xs)))))
-     (let* ((x (apply #'initializer a others))) x))))
+    (labels ((initializer (x &rest xs)
+               (if (not xs)
+                   (thunk-value x)
+                   (lazy-cons (force-thunk x) (apply #'initializer xs)))))
+      (let* ((x (apply #'initializer a others))) x))))
 
 (defmacro lazy-list* (val &rest vals)
   "A convenience macro to add items to the beginning of a lazy sequence.
@@ -1041,8 +1053,9 @@ If `seq' is nil, the output is nil."))
                   (1- state)))
             (lambda (seq state limit from-end)
               (declare (ignore limit from-end))
+              ;; TODO: Make this somewhat safer
               (handler-case
-                  (not (elt seq state))
+                  (unless (elt seq state) t)
                 (error () t)))
             (lambda (seq state)
               (elt seq state))

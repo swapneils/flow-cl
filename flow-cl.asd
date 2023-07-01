@@ -4,7 +4,8 @@
   :license "MIT"
   :depends-on ("serapeum"
                "iterate"
-               "trivial-extensible-sequences")
+               "trivial-extensible-sequences"
+               "closer-mop")
   :components ((:module "src"
                 :components
                 ((:file "package")

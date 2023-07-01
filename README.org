@@ -97,9 +97,9 @@ Future plans are vaguer, but currently involve the following points:
 
   - A key goal of this framework should be to allow easily converting code into and out of it. The inwards direction allows for easy adoption of the framework, while the outward direction would be useful for user-designed code optimizations (and, before the project reaches maturity, escaping its limitations).
 
-  - Ideally, this system should give first-class support to lexical construction of these flow components, to allow easy integration with functional-style Common Lisp code (while also being unlikely to impede other paradigms, as functional constructs can often be integrated into larger non-imperative procedures).
+  - Ideally, this system should give first-class support to lexical construction of these flow components, to allow easy integration with functional-style Common Lisp code (while also being unlikely to impede other paradigms, as functional constructs can often be integrated into larger non-functional procedures).
 
-  - Ideally, this system should optimize the internal implementation of flow components, due to the independence guarantee (as well as optional user-defined attributes of said components), allowing for larger systems to be easily created while maintaining decent performance.
+  - Ideally, this system should optimize the internal implementation of flow components by using the information it has on their structure (such as the independence guarantee, or optional user-defined attributes), allowing for larger systems to be easily created while maintaining decent performance.
 
 - ...
 
