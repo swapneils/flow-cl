@@ -148,12 +148,12 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
 
 ;;; Basic test function
 (defun pnats (&optional (n 0))
-  (subst-symbols-if lparallel:*kernel*
+  (subst-symbols
       ((lazy-iterate plazy-iterate))
     (lazy-iterate #'1+ n)))
 (defun plazy-iota (start-or-end &optional end (step 1))
   (subst-gensyms (lazy-iota-iterator curr inner-end inner-step)
-    (subst-symbols-if lparallel:*kernel*
+    (subst-symbols
         ((lazy-cons plazy-cons))
       (let ((start (if end start-or-end 0))
             (inner-end (if end end start-or-end))
@@ -163,7 +163,7 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
                      (plazy-cons curr (lazy-iota-iterator (+ curr inner-step))))))
           (lazy-iota-iterator start))))))
 (defun pfibs ()
-  (subst-symbols-if lparallel:*kernel*
+  (subst-symbols
       ((lazy-list* plazy-list*))
     (let ((temp))
       (setf temp (plazy-list* 1 1 (maps #'+ (tail temp) temp)))
