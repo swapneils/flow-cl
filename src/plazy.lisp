@@ -77,14 +77,19 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
   (let ((xs (cons val vals)))
     `(plazy-list*-internal ,@(mapcar (lambda (%) (list 'create-thunk %)) xs))))
 
+(defun plazy-iterate (f x)
+  "A convenience function to construct a `lazy-cons' starting with `x' and continuing with successive values of (`f' `x')"
+  (declare (optimize space speed safety))
+  (plazy-cons x (plazy-iterate f (funcall f x))))
+
 (defmethod takes ((n integer) (s plazy-cons))
   "Returns the list of the `n` first elements of the sequence `s`."
   (declare (optimize space speed))
   (subst-gensyms (inner-takes inner-n seq)
-      (labels ((inner-takes (inner-n seq)
-                 (when (plusp inner-n)
-                   (plazy-cons (force (head seq)) (inner-takes (1- inner-n) (tail seq))))))
-        (inner-takes n (copy-seq s)))))
+    (labels ((inner-takes (inner-n seq)
+               (when (plusp inner-n)
+                 (plazy-cons (force (head seq)) (inner-takes (1- inner-n) (tail seq))))))
+      (inner-takes n (copy-seq s)))))
 (defmethod takes ((pred function) (s plazy-cons))
   "Returns the list of all elements of the sequence `s` before the first one that fails `pred'."
   (declare (optimize space speed))
@@ -139,7 +144,34 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
 ;;; used with the structures defined here
 
 ;;; Basic test function
-(defun pfibs ()
-  (let ((temp))
-    (setf temp (plazy-list* 1 1 (maps #'+ (tail temp) temp)))
-    temp))
+(defun nats (&optional (n 0))
+  (subst-symbols-if lparallel:*kernel*
+      ((lazy-iterate plazy-iterate))
+    (lazy-iterate #'1+ n)))
+(defun lazy-iota (start-or-end &optional end (step 1))
+  (subst-gensyms (lazy-iota-iterator curr inner-end inner-step)
+    (subst-symbols-if lparallel:*kernel*
+        ((lazy-cons plazy-cons))
+      (let ((start (if end start-or-end 0))
+            (inner-end (if end end start-or-end))
+            (inner-step step))
+        (labels ((lazy-iota-iterator (curr)
+                   (unless (>= curr inner-end)
+                     (plazy-cons curr (lazy-iota-iterator (+ curr inner-step))))))
+          (lazy-iota-iterator start))))))
+(defun fibs ()
+  (subst-symbols-if lparallel:*kernel*
+      ((lazy-list* plazy-list*))
+    (let ((temp))
+      (setf temp (plazy-list* 1 1 (maps #'+ (tail temp) temp)))
+      temp)))
+
+;;; NOTE: According to this test, `plazy-cons' allows dependencies to later values in the sequence!
+(defun pmanual-test ()
+  (list
+   (let ((temp1))
+     (setf temp1 (plazy-list 1 1 (1+ (elt temp1 3)) 4 5))
+     temp1)
+   (let ((temp2))
+     (setf temp2 (plazy-list 1 1 (1+ (elt temp2 1)) 4 5))
+     temp2)))

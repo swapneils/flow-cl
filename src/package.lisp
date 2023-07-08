@@ -5,7 +5,7 @@
   (:local-nicknames
    (:sera :serapeum)
    (:sequences :org.shirakumo.trivial-extensible-sequences))
-  (:export #:subst-gensyms
+  (:export #:subst-symbols #:subst-symbols-if #:subst-gensyms
            #:vector-insert-at #:simple-vector-insert-at
            #:vector-append #:vector-append!))
 
