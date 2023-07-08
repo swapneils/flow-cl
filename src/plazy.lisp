@@ -24,7 +24,10 @@ Keep in mind that both elements of `expr' should be promises."
 (defmacro plazy-cons (hd tl)
   "A macro to create a `plazy-cons' with `hd' as the head and `tl' as the tail."
   (declare (optimize space speed))
-  `(plazy-cons-gen (list (future ,hd) (future ,tl))))
+  ;; TODO: Check if the below kernel safeguard works without bugs
+  `(plazy-cons-gen (if lparallel:*kernel*
+                       (list (future ,hd) (future ,tl))
+                       (list ,hd ,tl))))
 
 (defmethod head ((lazy-seq plazy-cons))
   (declare (optimize speed))
