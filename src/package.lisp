@@ -14,7 +14,7 @@
   (:local-nicknames
    (:sera :serapeum)
    (:sequences :org.shirakumo.trivial-extensible-sequences))
-  (:export #:thunk #:create-thunk #:force-thunk #:thunk-value #:thunk-realized
+  (:export #:thunk #:create-thunk #:force-thunk #:thunk-value #:thunk-realized #:thunk-gen
            #:lazy-vector #:lazy-vec
            #:get-current-contents
            #:head #:tail #:nthcdrs
