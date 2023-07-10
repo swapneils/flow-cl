@@ -40,6 +40,8 @@
   ((head :initform nil :initarg :head :accessor :head)
    (tail :initform nil :initarg :tail :accessor :tail)))
 
+;;; NOTE: Currently lazy-vector is less performant than lazy-cons and plazy-cons
+;;; TODO: FIX THIS
 (defclass lazy-vector (lazy-cons thunk sequences:sequence)
   ((head :initform (make-array 0 :adjustable t :fill-pointer t) :initarg :head :accessor :head)
    (offset :initform 0 :initarg :offset :accessor :offset)
@@ -50,6 +52,8 @@
   (:documentation "A function for checking if a thunk object is realized. Specializes as necessary for thunk subclasses."))
 (defmethod thunk-realized ((thunk t))
   t)
+(defmethod thunk-realized ((thunk null))
+  nil)
 (defmethod thunk-realized ((thunk thunk))
   (slot-value thunk 'realized))
 (defmethod thunk-realized ((li lazy-vector))
@@ -136,7 +140,7 @@ Has specialized methods to work better for lazy sequences, and redirects to `elt
 Has specialized methods to work better for lazy sequences, and redirects to `subseq' for most other sequences."))
 (defmethod tail ((seq sequences:sequence))
   (declare (optimize speed))
-  (subseq seq 0))
+  (subseq seq 1))
 (defmethod tail ((seq list))
   (declare (optimize speed))
   (cdr seq))
@@ -163,17 +167,18 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
     (for cell initially seq then (tail cell))
     (while cell)
     (finally (return cell))))
-;; NOTE: Forces one extra thunk to evaluate to ensure the cdr actually exists, otherwise returns nil
-;; TODO: Change this behavior to work without excessive evaluation.
+;; NOTE: Initially forced one extra thunk to evaluate to ensure the cdr actually exists, otherwise returns nil
+;; Currently just returns an empty sequence, to avoid problems with infinite sequences
+;; TODO: Restore nil punning for empty vectors without excessive evaluation?
 (defmethod nthcdrs ((index integer) (seq lazy-vector))
   (declare (optimize speed space))
   (let ((real-offset (+ index (:offset seq))))
     (iter
-      (for i from (length (:head seq)) to real-offset)
-      (while (not (thunk-realized seq)))
+      (for i from (length (:head seq)) below real-offset)
+      (while (not (or (thunk-realized seq) (sequences:emptyp seq))))
       (force-thunk seq)
       (finally (return
-                 (when (> (length (:head seq)) real-offset)
+                 (when (>= (length (:head seq)) real-offset)
                    (lazy-vec (slot-value seq 'tail) (slot-value seq 'head) real-offset)))))))
 
 
@@ -190,7 +195,6 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
   (declare (optimize space speed))
   `(lazy-cons-gen (list ,hd ,tl)))
 
-;; TODO: Allow null sequences
 ;; TODO: Maybe replace the internal lazy-cons with just its generator function?
 ;; TODO: Use `get-current-contents' for initialization, with the second return value as `:tail'?
 (defun lazy-vec (genseq
@@ -209,7 +213,7 @@ However, they internally cache realized contents, which likely requires manually
                (t (make-array 0 :adjustable t :fill-pointer t)))))
     (let ((genseq genseq))
       (iter
-        (while (and genseq (thunk-realized genseq)))
+        (while (and (not (sequences:emptyp genseq)) (thunk-realized genseq)))
         (for i from 0)
         (while (or (not (< 0 offset 2048)) (< (length arr) 2048)))
         (vector-append! arr (head genseq))
@@ -226,13 +230,17 @@ However, they internally cache realized contents, which likely requires manually
               (lazy-vec genseq (subseq arr offset))
               (lazy-vec genseq))
           (progn
-            (unless genseq (setf (slot-value li 'realized) t))
+            (unless (and genseq
+                         (not (and (subtypep (type-of genseq)
+                                             'sequences:sequence)
+                                   (sequences:emptyp genseq))))
+              (setf (slot-value li 'realized) t))
             (subst-gensyms (gen-func cell realizeds)
               (labels ((gen-func ()
                          (let ((cell (slot-value li 'tail))
                                (realizeds (slot-value li 'realized-count))
                                (arr (slot-value li 'head)))
-                           (when cell
+                           (unless (sequences:emptyp cell)
                              (iter
                                (while (and cell (< realizeds (length arr))))
                                (setf cell (tail cell))
@@ -419,8 +427,6 @@ If `seq' is nil, the output is nil."))
                  (lazy-cons (head seq) (inner-takes inner-pred (tail seq))))))
       (inner-takes pred (copy-seq s)))))
 
-;; NOTE: Calculates one more to ensure the takes actually exists, otherwise returns nil
-;; TODO: Change this behavior
 (defmethod takes ((n integer) (s lazy-vector))
   (declare (optimize space speed))
   (subst-gensyms (inner-takes inner-n seq idx)
@@ -431,7 +437,17 @@ If `seq' is nil, the output is nil."))
                  (unless (>= idx (length (slot-value seq 'head)))
                    (let ((hd (elt (slot-value seq 'head) idx)))
                      (lazy-cons hd (inner-takes (1- inner-n) seq (1+ idx))))))))
-      (lazy-vec (inner-takes n s (:offset s))))))
+      ;; (iter
+      ;;   (for l = (length (slot-value s 'head)))
+      ;;   (while (>= n l))
+      ;;   (print l)
+      ;;   (force-thunk s))
+      (lazy-vec (inner-takes n s (:offset s))))
+    ;; (labels ((inner-takes (inner-n seq)
+    ;;              (when (plusp inner-n)
+    ;;                (lazy-cons (head seq) (inner-takes (1- inner-n) (tail seq))))))
+    ;;     (inner-takes n (copy-seq s)))
+    ))
 (defmethod takes ((pred function) (s lazy-vector))
   (declare (optimize space speed))
   (subst-gensyms (inner-takes inner-pred seq idx)
@@ -553,46 +569,68 @@ If `seq' is nil, the output is nil."))
 
 ;; TODO: Make maps and filters check emptyp, to avoid the error in the following:
 ;;; (thunk-value (maps #'1+ (lazy-vec (lazy-values))))
-(defun maps (f s &rest others)
+(defun maps-internal (f s &optional (others nil))
   (declare (optimize space speed) (function f))
   (subst-gensyms (inner-f inner-s inner-others)
     (let ((inner-f f)
           (inner-s s)
           (inner-others others))
-      (funcall
-       (typecase s (lazy-vector #'lazy-vec) (t #'identity))
-       (when s
-         (cond
-           (others
-            (lazy-cons
-             (apply inner-f
-                    (head inner-s)
-                    (mapcar #'head inner-others))
-             (apply #'maps inner-f
-                    (tail inner-s)
-                    (mapcar #'tail inner-others))))
-           (t
-            (lazy-cons
-             (funcall inner-f (head inner-s))
-             (maps inner-f (tail inner-s))))))))))
+      (when s
+        (cond
+          (others
+           (lazy-cons
+            (apply inner-f
+                   (head inner-s)
+                   (mapcar #'head inner-others))
+            (maps-internal inner-f
+                   (tail inner-s)
+                   (mapcar #'tail inner-others))))
+          (t
+           (lazy-cons
+            (funcall inner-f (head inner-s))
+            (maps-internal inner-f (tail inner-s)))))))))
 
-(defun filters (pred s)
+(defmethod maps (f (s sequences:sequence) &rest others)
+  (apply #'cl:map 'list f s others))
+
+(defmethod maps (f (s lazy-cons) &rest others)
+  (declare (optimize space speed) (function f))
+  (unless (some #'sequences:emptyp (cons s others))
+    (maps-internal f s others)))
+
+(defmethod maps (f (s lazy-vector) &rest others)
+  (declare (optimize space speed) (function f))
+  (lazy-vec
+   (unless (some #'sequences:emptyp (cons s others))
+     (maps-internal f s others))))
+
+(defun filters-internal (pred s)
   (declare (optimize space speed) (function pred))
-  (subst-gensyms (inner-pred inner-s)
+  (subst-gensyms (inner-pred inner-s) ;;Avoid variable capture in lazy-cons
     (let ((inner-pred pred)
           (inner-s s))
-      (funcall
-       (typecase s (lazy-vector #'lazy-vec) (t #'identity))
-       (cond
-         ((null s) nil)
-         ((funcall inner-pred (head inner-s))
-          (lazy-cons-gen (list (head inner-s) (filters inner-pred (tail inner-s)))))
-         (t (filters inner-pred (tail inner-s)))))))
+      (iter
+        (cond
+          ((sequences:emptyp inner-s) (return nil))
+          ((funcall pred (head inner-s))
+           (return (lazy-cons (head inner-s) (filters-internal inner-pred (tail inner-s))))))
+        (setf inner-s (tail inner-s)))))
   ;; (when s
   ;;   (if (funcall pred (head s))
   ;;       (lazy-cons-gen (list (head s) (filters pred (tail s))))
   ;;       (filters pred (tail s))))
   )
+
+(defmethod filters (pred (s sequences:sequence))
+  (serapeum:filter pred s))
+
+(defmethod filters (pred (s lazy-vector))
+  (declare (optimize space speed) (function pred))
+  (lazy-vec (filters-internal pred s)))
+
+(defmethod filters (pred (s lazy-cons))
+  (declare (optimize space speed) (function pred))
+  (filters-internal pred s))
 
 
 
@@ -817,9 +855,12 @@ If `seq' is nil, the output is nil."))
   ;; (drops 0 seq)
   )
 
+;;; TODO: Fix the issue with stack frame overflow (and low speed)
+;;; Probably not optimizing tail-recursion or going in the wrong method?
 (defmethod sequences:sort ((seq lazy-cons) pred &key key)
   (declare (optimize speed space))
   (labels ((srt (initstack)
+             (declare (optimize speed space))
              (let ((stack initstack))
                (loop
                  (let ((stack-head (head stack))
@@ -849,6 +890,10 @@ If `seq' is nil, the output is nil."))
                                  (return (lazy-cons pivot (srt new-stack))))))))))))))
     (srt (list (thunk-value (if key (maps key seq) seq))))))
 
+(defmethod sequences:sort ((seq lazy-cons) pred &key key)
+  (declare (optimize speed space))
+  (apply #'lazy-values (sort (thunk-value seq) pred :key key)))
+
 (defmethod sequences:sort ((seq lazy-vector) pred &key key)
   (declare (optimize space speed))
   (thunk-value seq)
@@ -860,7 +905,7 @@ If `seq' is nil, the output is nil."))
                 :key key))
     seq)
 
-  ;;; TODO: Refactor heapq sort to work with lazy vectors?
+;;; TODO: Refactor heapq sort to work with lazy vectors?
   ;; (labels ((srt (initstack)
   ;;            (let ((stack initstack))
   ;;              (loop

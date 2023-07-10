@@ -30,7 +30,11 @@
         :flow-cl.lazy :lparallel)
   (:local-nicknames
    (:sera :serapeum)
-   (:sequences :org.shirakumo.trivial-extensible-sequences)))
+   (:sequences :org.shirakumo.trivial-extensible-sequences))
+  (:export #:plazy-cons #:plazy-cons-gen
+           #:plazy-list
+           #:plazy-list* #:plazy-cat #:plazy-iterate
+           #:pnats #:plazy-iota #:pfibs))
 
 (defpackage :flow-cl
   (:use :common-lisp)

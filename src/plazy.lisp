@@ -55,6 +55,15 @@ Does not evaluate its arguments, unlike `lazy-values'."
   (when vals
     `(plazy-cons ,(car vals) (plazy-list ,@(cdr vals)))))
 
+(declaim (inline lazy-values))
+
+(defun plazy-values (&rest vals)
+  "A convenience function to combine the input `vals' into a `lazy-cons'.
+Evaluates its arguments."
+  (declare (optimize space speed))
+  (when vals
+    (plazy-cons (car vals) (apply #'plazy-values (cdr vals)))))
+
 (defun plazy-cat (seq &rest seqs)
   (if (sequences:emptyp seq)
       (when seqs
@@ -102,31 +111,6 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
                  (plazy-cons (head seq) (inner-takes inner-pred (tail seq))))))
       (inner-takes pred (copy-seq s)))))
 
-(defmethod drops ((n integer) (s lazy-cons))
-  "Drops the first `n` elements of the sequence `s`."
-  (declare (optimize space speed))
-  (copy-seq
-   (loop
-     for cell = s then (tail cell)
-     repeat n
-     when (not (thunk-realized cell))
-       do (progn (force-thunk cell) (head cell))
-     when (not cell)
-       do (return cell)
-     finally (head cell) (return cell))))
-(defmethod drops ((pred function) (s lazy-cons))
-  "Drops all elements of the sequence `s` before the first one that fails `pred'."
-  (declare (optimize space speed))
-  (copy-seq
-   (loop
-     for cell = s then (tail cell)
-     when (not (thunk-realized cell))
-       do (force-thunk cell)
-     when (not (and cell
-                    (funcall pred (head cell))))
-       do (return cell)
-     finally (return cell))))
-
 (defmethod sequences:copy-seq ((seq plazy-cons))
   (let ((head-val (:head seq))
         (gen-val (thunk-gen seq))
@@ -142,6 +126,84 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
         (setf (:tail ans) (copy-seq (force tail-val)))
         (setf (:thunk ans) realized-val))
       ans)))
+
+(defmethod sequences:sort ((seq plazy-cons) pred &key key)
+  (declare (optimize speed space))
+  (labels ((srt (initstack)
+             (declare (optimize speed space))
+             (let ((stack initstack))
+               (loop
+                 (let ((stack-head (head stack))
+                       (stack-rest (tail stack)))
+                   (unless (null stack-head)
+                     (let (
+                           (pivot (head stack-head))
+                           (pivot-tail (tail stack-head))
+                           )
+                       (labels ((before-p (v)
+                                  (declare (optimize speed space))
+                                  (funcall pred v pivot)))
+                         (let ((before-pivot (filters #'before-p pivot-tail))
+                               (after-pivot (filters (complement #'before-p) pivot-tail)))
+                           (let ((new-stack (if after-pivot
+                                                (plazy-cons after-pivot stack-rest)
+                                                stack-rest)))
+                             (if before-pivot
+                                 (setf stack
+                                       (plazy-list* before-pivot
+                                                   (list pivot)
+                                                   new-stack)
+                                       ;; (cons before-pivot
+                                       ;;       (cons (list pivot)
+                                       ;;             new-stack))
+                                       )
+                                 (return (lazy-cons pivot (srt new-stack))))))))))))))
+    (srt (list (thunk-value (if key (maps key seq) seq))))))
+
+(defmethod sequences:sort ((seq plazy-cons) pred &key key)
+  (declare (optimize speed space))
+  (apply #'plazy-values (sort (thunk-value seq) pred :key key)))
+
+(defun pmaps-internal (f s &optional others)
+  (declare (optimize space speed) (function f))
+  (subst-gensyms (inner-f inner-s inner-others)
+    (let ((inner-f f)
+          (inner-s s)
+          (inner-others others))
+      (when s
+        (cond
+          (others
+           (plazy-cons
+            (apply inner-f
+                   (head inner-s)
+                   (mapcar #'head inner-others))
+            (pmaps-internal inner-f
+                   (tail inner-s)
+                   (mapcar #'tail inner-others))))
+          (t
+           (plazy-cons
+            (funcall inner-f (head inner-s))
+            (pmaps-internal inner-f (tail inner-s)))))))))
+
+(defmethod maps (f (s plazy-cons) &rest others)
+  (unless (some #'sequences:emptyp (cons s others))
+    (apply #'pmaps-internal f s others)))
+
+(defun pfilters-internal (pred s)
+  (declare (optimize space speed) (function pred))
+  (subst-gensyms (inner-pred inner-s) ;;Avoid variable capture in lazy-cons
+    (let ((inner-pred pred)
+          (inner-s s))
+      (iter
+        (cond
+          ((sequences:emptyp inner-s) (return nil))
+          ((funcall pred (head inner-s))
+           (return (plazy-cons (head inner-s) (pfilters-internal inner-pred (tail inner-s))))))
+        (setf inner-s (tail inner-s))))))
+(defmethod filters (pred (s plazy-cons))
+  (declare (optimize space speed) (function pred))
+  (pfilters-internal pred s))
+
 
 ;;; NOTE: Fix functions in lazy.lisp to be thread-safe when
 ;;; used with the structures defined here
