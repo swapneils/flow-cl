@@ -5,12 +5,19 @@
 ;;; This package extends `flow-cl.lazy' with structures that auto-parallelize
 ;;; thunk evaluation, via use of the `lparallel' library
 
+;;; Note that auto-parallelization results in LESS efficiency for sequences
+;;; with low per-element computation, due to orchestration costs
+
+;;; NOTE: Currently `plazy-cons' is less efficient than `lazy-cons' in my simple numeric tests
+;;; TODO: FIX THIS
+;;; Where can we most take advantage of the parallelism capability?
+;;; Can we reduce the quantity of `lparallel' promises?
+
 (defclass plazy-cons (lazy-cons)
   ((head :initform nil :initarg :head :accessor :head)
    (tail :initform nil :initarg :tail :accessor :tail)))
-;;; NOTE: lazy-vec should (in theory, at least) work out of the box with `plazy-cons' inputs
+;;; NOTE: lazy-vec should work out of the box with `plazy-cons' inputs
 
-;;; TODO: Implement constructor and core functionality for `plazy-cons'
 (defmacro plazy-cons-gen (expr)
   "A macro to create a `plazy-cons', with `expr' being used in its generator function to produce a list of the head and tail of the `plazy-cons'.
 Keep in mind that both elements of `expr' should be promises."
@@ -39,7 +46,7 @@ Keep in mind that both elements of `expr' should be promises."
   (declare (optimize speed))
   (force-thunk lazy-seq)
   (setf (:tail lazy-seq) (force (:tail lazy-seq)))
-  (force (:tail lazy-seq)))
+  (:tail lazy-seq))
 
 (defmethod thunk-value ((s plazy-cons))
   (declare (optimize space speed))
@@ -50,7 +57,7 @@ Keep in mind that both elements of `expr' should be promises."
 
 (defmacro plazy-list (&rest vals)
   "A convenience macro to combine the input `vals' into a `plazy-cons'.
-Does not evaluate its arguments, unlike `lazy-values'."
+Does not evaluate its arguments, unlike `plazy-values'."
   (declare (optimize space speed))
   (when vals
     `(plazy-cons ,(car vals) (plazy-list ,@(cdr vals)))))
@@ -64,15 +71,20 @@ Evaluates its arguments."
   (when vals
     (plazy-cons (car vals) (apply #'plazy-values (cdr vals)))))
 
+(defun plazy-cat-internal (seqs)
+  (let ((hd (car seqs))
+        (tl (cdr seqs)))
+    (if (sequences:emptyp hd)
+        (when tl
+          (plazy-cat-internal tl))
+        (subst-gensyms (seq-head seq-tail others)
+          (let ((seq-head (head hd))
+                (seq-tail (tail hd))
+                (others tl))
+            (plazy-cons seq-head (plazy-cat seq-tail others)))))))
+
 (defun plazy-cat (seq &rest seqs)
-  (if (sequences:emptyp seq)
-      (when seqs
-        (apply #'plazy-cat seqs))
-      (subst-gensyms (seq-head seq-tail others)
-        (let ((seq-head (head seq))
-              (seq-tail (tail seq))
-              (others seqs))
-          (plazy-cons seq-head (apply #'plazy-cat seq-tail others))))))
+  (plazy-cat-internal (cons seq seqs)))
 
 (defun plazy-list*-internal (a &rest others)
   (subst-gensyms (x xs)
@@ -100,7 +112,7 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
   (subst-gensyms (inner-takes inner-n seq)
     (labels ((inner-takes (inner-n seq)
                (when (plusp inner-n)
-                 (plazy-cons (force (head seq)) (inner-takes (1- inner-n) (tail seq))))))
+                 (plazy-cons (force (head seq)) (inner-takes (1- inner-n) (force (tail seq)))))))
       (inner-takes n (copy-seq s)))))
 (defmethod takes ((pred function) (s plazy-cons))
   "Returns the list of all elements of the sequence `s` before the first one that fails `pred'."
@@ -127,42 +139,8 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
         (setf (:thunk ans) realized-val))
       ans)))
 
-(defmethod sequences:sort ((seq plazy-cons) pred &key key)
-  (declare (optimize speed space))
-  (labels ((srt (initstack)
-             (declare (optimize speed space))
-             (let ((stack initstack))
-               (loop
-                 (let ((stack-head (head stack))
-                       (stack-rest (tail stack)))
-                   (unless (null stack-head)
-                     (let (
-                           (pivot (head stack-head))
-                           (pivot-tail (tail stack-head))
-                           )
-                       (labels ((before-p (v)
-                                  (declare (optimize speed space))
-                                  (funcall pred v pivot)))
-                         (let ((before-pivot (filters #'before-p pivot-tail))
-                               (after-pivot (filters (complement #'before-p) pivot-tail)))
-                           (let ((new-stack (if after-pivot
-                                                (plazy-cons after-pivot stack-rest)
-                                                stack-rest)))
-                             (if before-pivot
-                                 (setf stack
-                                       (plazy-list* before-pivot
-                                                   (list pivot)
-                                                   new-stack)
-                                       ;; (cons before-pivot
-                                       ;;       (cons (list pivot)
-                                       ;;             new-stack))
-                                       )
-                                 (return (lazy-cons pivot (srt new-stack))))))))))))))
-    (srt (list (thunk-value (if key (maps key seq) seq))))))
-
-(defmethod sequences:sort ((seq plazy-cons) pred &key key)
-  (declare (optimize speed space))
-  (apply #'plazy-values (sort (thunk-value seq) pred :key key)))
+(defmethod sorted ((seq plazy-cons) pred &key key)
+  (apply #'plazy-values (sequences:sort (thunk-value seq) pred :key key)))
 
 (defun pmaps-internal (f s &optional others)
   (declare (optimize space speed) (function f))
@@ -178,8 +156,8 @@ As the internal `lazy-cons' representation is traversed using `head' and `tail',
                    (head inner-s)
                    (mapcar #'head inner-others))
             (pmaps-internal inner-f
-                   (tail inner-s)
-                   (mapcar #'tail inner-others))))
+                            (tail inner-s)
+                            (mapcar #'tail inner-others))))
           (t
            (plazy-cons
             (funcall inner-f (head inner-s))

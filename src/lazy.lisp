@@ -202,8 +202,9 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
                    (arr (make-array 0 :adjustable t :fill-pointer t))
                    (offset 0))
   "A function to wrap a `sequence' (such as a `lazy-cons') into a `lazy-vector'.
-`lazy-vector' objects are more efficient than `lazy-cons', retain fewer intermediary objects, and can drop down to native vector-manipulation code for some operations.
-However, they internally cache realized contents, which likely requires manually replacing them (e.g. with `nthcdrs') when dealing with long sequences of high-memory objects."
+`lazy-vector' objects share more information, retain fewer pointers to intermediary objects, and drop down to native vector-manipulation code where possible.
+However, they internally cache realized contents.
+It is recommended to manually drop unnecessary early elements when dealing with exceedingly-long sequences of high-memory objects."
   (let ((li (make-instance 'lazy-vector))
         (arr (cond
                ((adjustable-array-p arr) arr)
@@ -369,7 +370,7 @@ The second return value contains the 'unrealized remainder' of the input thunk. 
      (iter
        (while (and cell (thunk-realized cell)))
        (collect (head cell))
-       (setf cell (tail cell)))
+       (setf cell (tail cell)))
      cell)))
 (defmethod get-current-contents ((seq lazy-vector))
   (values
@@ -392,7 +393,8 @@ The second return value contains the 'unrealized remainder' of the input thunk. 
   (iter
     (while (not (thunk-realized s)))
     (force-thunk s)
-    (finally (return (map 'vector #'thunk-value (get-current-contents s))))))
+    (finally (setf (:tail s) nil)
+             (return (map 'vector #'thunk-value (get-current-contents s))))))
 
 
 
@@ -442,7 +444,9 @@ If `seq' is nil, the output is nil."))
       ;;   (while (>= n l))
       ;;   (print l)
       ;;   (force-thunk s))
-      (lazy-vec (inner-takes n s (:offset s))))
+      (if (<= (+ n (:offset s)) (length (:head s)))
+          (lazy-vec nil (subseq (:head s) (:offset s) (+ n (:offset s))) (:offset s))
+          (lazy-vec (inner-takes n s (:offset s)))))
     ;; (labels ((inner-takes (inner-n seq)
     ;;              (when (plusp inner-n)
     ;;                (lazy-cons (head seq) (inner-takes (1- inner-n) (tail seq))))))
@@ -589,6 +593,10 @@ If `seq' is nil, the output is nil."))
            (lazy-cons
             (funcall inner-f (head inner-s))
             (maps-internal inner-f (tail inner-s)))))))))
+
+;;; TODO: The below code adds an extra element when the `maps' call is added. FIX THIS
+(serapeum:comment
+  (time (identity (identity (thunk-value (maps #'- (filters #'oddp (lazy-vec (lazy-iota 10)))))))))
 
 (defmethod maps (f (s sequences:sequence) &rest others)
   (apply #'cl:map 'list f s others))
@@ -856,7 +864,7 @@ If `seq' is nil, the output is nil."))
   )
 
 ;;; TODO: Fix the issue with stack frame overflow (and low speed)
-;;; Probably not optimizing tail-recursion or going in the wrong method?
+;;; Possibly not optimizing tail-recursion, or going in the wrong method?
 (defmethod sequences:sort ((seq lazy-cons) pred &key key)
   (declare (optimize speed space))
   (labels ((srt (initstack)
@@ -890,20 +898,20 @@ If `seq' is nil, the output is nil."))
                                  (return (lazy-cons pivot (srt new-stack))))))))))))))
     (srt (list (thunk-value (if key (maps key seq) seq))))))
 
+;;; NOTE: Should I keep this or use the heapq sort?
+;;; The former is more lazy, but also more expensive, which may not be worth it
+;;; at the scales lazy objects can currently handle?.
+(defmethod sorted ((seq sequences:sequence) pred &key key)
+  (serapeum:sort-new seq pred :key key))
+
+(defmethod sorted ((seq lazy-cons) pred &key key)
+  (apply #'lazy-values (sequences:sort (thunk-value seq) pred :key key)))
 (defmethod sequences:sort ((seq lazy-cons) pred &key key)
   (declare (optimize speed space))
-  (apply #'lazy-values (sort (thunk-value seq) pred :key key)))
-
-(defmethod sequences:sort ((seq lazy-vector) pred &key key)
-  (declare (optimize space speed))
-  (thunk-value seq)
-  (let ((seq (copy-seq seq)))
-    (thunk-value seq)
-    (setf (slot-value seq 'head)
-          (sort (slot-value seq 'head)
-                pred
-                :key key))
-    seq)
+  (let ((ans (sorted seq pred :key key)))
+    (setf (:head seq) (head ans))
+    (setf (:tail seq) (tail ans)))
+  seq)
 
 ;;; TODO: Refactor heapq sort to work with lazy vectors?
   ;; (labels ((srt (initstack)
@@ -929,7 +937,18 @@ If `seq' is nil, the output is nil."))
   ;;                                      (lazy-list* before-pivot (list pivot) new-stack)
   ;;                                      ))))))))))))
   ;;   (srt (list (if key (maps key seq) seq))))
-  )
+
+(defmethod sequences:sort ((seq lazy-vector) pred &key key)
+  (declare (optimize space speed))
+  (or (thunk-realized seq) (thunk-value seq))
+  (setf (:head seq)
+        (sort (copy-seq (slot-value seq 'head))
+              pred
+              :key key))
+  seq)
+(defmethod sorted ((seq lazy-vector) pred &key key)
+  (or (thunk-realized seq) (thunk-value seq))
+  (sequences:sort (copy-seq seq) pred :key key))
 
 (defmethod sequences:remove-duplicates ((seq lazy-vector) &key from-end (test #'eql) test-not (start 0) end key)
   (thunk-value seq)
