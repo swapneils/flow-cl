@@ -29,7 +29,9 @@ Keep in mind that both elements of `expr' should be promises."
             ,expr))))
 
 (defmacro plazy-cons (hd tl)
-  "A macro to create a `plazy-cons' with `hd' as the head and `tl' as the tail."
+  "A macro to create a `plazy-cons' with `hd' as the head and `tl' as the tail.
+Each `plazy-cons' has parallelization overhead, but this can be outweighed by the parallelization of high-cost element-evaluations.
+When without an `lparallel:*kernel*', `plazy-cons' should be identical in behavior to `lazy-cons'"
   (declare (optimize space speed))
   ;; TODO: Check if the below kernel safeguard works without bugs
   `(plazy-cons-gen (if lparallel:*kernel*
@@ -66,7 +68,8 @@ Does not evaluate its arguments, unlike `plazy-values'."
 
 (defun plazy-values (&rest vals)
   "A convenience function to combine the input `vals' into a `lazy-cons'.
-Evaluates its arguments."
+Evaluates its arguments.
+Note that this is still useful for e.g. creating an initial `plazy-cons' to apply sequence operations to."
   (declare (optimize space speed))
   (when vals
     (plazy-cons (car vals) (apply #'plazy-values (cdr vals)))))
@@ -95,9 +98,8 @@ Evaluates its arguments."
       (apply #'initializer a others))))
 
 (defmacro plazy-list* (val &rest vals)
-  "A convenience macro to add items to the beginning of a lazy sequence.
-The input is a set of input values followed by a sequence. The values will be put into a `plazy-cons' whose last tail is the sequence at the end.
-As the internal `lazy-cons' representation is traversed using `head' and `tail', the final input need only be any instance of sequence."
+  "A convenience macro to add items to the beginning of a `plazy-cons'.
+The input is a set of input values followed by a sequence. The values will be put into a `plazy-cons' whose last tail is the sequence at the end."
   (let ((xs (cons val vals)))
     `(plazy-list*-internal ,@(mapcar (lambda (%) (list 'create-thunk %)) xs))))
 

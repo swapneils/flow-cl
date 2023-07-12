@@ -203,8 +203,8 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
                    (offset 0))
   "A function to wrap a `sequence' (such as a `lazy-cons') into a `lazy-vector'.
 `lazy-vector' objects share more information, retain fewer pointers to intermediary objects, and drop down to native vector-manipulation code where possible.
-However, they internally cache realized contents.
-It is recommended to manually drop unnecessary early elements when dealing with exceedingly-long sequences of high-memory objects."
+As such, they are best used when doing mutiple sequence operations on the same dataset.
+However, they internally cache realized contents. It is recommended to manually drop unnecessary early elements when dealing with exceedingly-long sequences of high-memory objects."
   (let ((li (make-instance 'lazy-vector))
         (arr (cond
                ((adjustable-array-p arr) arr)
@@ -340,10 +340,13 @@ Does not evaluate its arguments, unlike `lazy-values'."
                    (lazy-cons (thunk-value x) (apply #'initializer xs)))))
       (apply #'initializer a others))))
 
+;;; TODO: Make this work for arbitrary sequences
+;;; Some failing tests:
+;;; (thunk-value (lazy-list* 1 2 (lazy-vec (lazy-list 4 5 6))))
+;;; (thunk-value (lazy-list* 1 2 [4 5 6]))
 (defmacro lazy-list* (val &rest vals)
-  "A convenience macro to add items to the beginning of a lazy sequence.
-The input is a set of input values followed by a sequence. The values will be put into a `lazy-cons' whose last tail is the sequence at the end.
-As the internal `lazy-cons' representation is traversed using `head' and `tail', the final input need only be any instance of sequence."
+  "A convenience macro to add items to the beginning of a `lazy-cons'.
+The input is a set of input values followed by a sequence. The values will be put into a `lazy-cons' whose last tail is the sequence at the end."
   (let ((xs (cons val vals)))
     `(lazy-list*-internal ,@(mapcar (lambda (%) (list 'create-thunk %)) xs))))
 
@@ -370,7 +373,7 @@ The second return value contains the 'unrealized remainder' of the input thunk. 
      (iter
        (while (and cell (thunk-realized cell)))
        (collect (head cell))
-       (setf cell (tail cell)))
+       (setf cell (tail cell)))
      cell)))
 (defmethod get-current-contents ((seq lazy-vector))
   (values
