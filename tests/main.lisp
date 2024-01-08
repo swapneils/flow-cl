@@ -1,6 +1,6 @@
 (defpackage flow-cl/tests/main
   (:use :cl
-        :flow-cl
+   :flow-cl
         :rove))
 (in-package :flow-cl/tests/main)
 
@@ -52,6 +52,29 @@
           (and (vectorp b)
                (= (length b) 5)
                (every #'= b (list 1 3 5 7 9)))))))
+
+(deftest basic-node-tests
+  (testing "`dataflow-node' structure operates correctly in simple cases."
+    (ok (equal
+         (let* ((a (make-dataflow-node 'a 3))
+                (b (op* (op+ a 20) 4))
+                collector)
+           (push (mapcar :value (list a b)) collector)
+           (setf (:value a) 20)
+           (push (mapcar :value (list a b)) collector)
+           (setf (:value a) 3)
+           (push (mapcar :value (list a b)) collector))
+         `((3 92) (20 160) (3 92)))))
+  (testing "`backprop-deriv' and `train' operate correctly in simple cases."
+    (ok (outputs
+            (let* ((a (make-nn-node 'a 5))
+                   (b (op* 2 (op- a 4))))
+              (format t "calculate: ~A  backprop: ~A  train: ~A  calc2: ~A"
+                      (calculate b)
+                      (backprop-deriv b)
+                      (train-simple-nn (list a b) #'identity)
+                      (calculate b t)))
+            "calculate: 2  backprop: NIL  train: NIL  calc2: 1.9972002600000007d0"))))
 
 ;;; TODO: Figure out how to use signals in deftest without compiler errors
 ;;; NOTE: test-testing-framework doesn't have any issues with "error", somehow,

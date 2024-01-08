@@ -3,11 +3,15 @@
   :author "Swapneil Singh"
   :license "MIT"
   :depends-on ("org.tfeb.conduit-packages"
+               "alexandria"
                "serapeum"
                "iterate"
                "trivial-extensible-sequences"
                "lparallel"
-               "closer-mop")
+               "closer-mop"
+               "cl-digraph"
+               "cl-digraph.dot"
+               "trivia")
   :components ((:module "src"
                 :components
                 ((:file "package")
@@ -15,6 +19,7 @@
                  (:file "fixes")
                  (:file "lazy")
                  (:file "plazy")
+                 (:file "node")
                  (:file "main"))))
   :description "An extension of Common Lisp to support an idiosyncratic view of dataflow-based programming."
   :in-order-to ((test-op (test-op "flow-cl/tests"))))

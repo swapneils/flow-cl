@@ -114,15 +114,6 @@ Thunks and lists of thunks are forced to evaluate, while non-thunks are passed t
 
 
 
-(defgeneric head (lazy-seq)
-  (:documentation "A function to get the first value in a sequence.
-Has specialized methods to work better for lazy sequences, and redirects to `elt' for most other sequences"))
-(defmethod head ((seq sequences:sequence))
-  (declare (optimize speed))
-  (elt seq 0))
-(defmethod head ((seq list))
-  (declare (optimize speed))
-  (car seq))
 (defmethod head ((lazy-seq lazy-cons))
   (declare (optimize speed))
   (force-thunk lazy-seq))
@@ -132,18 +123,9 @@ Has specialized methods to work better for lazy sequences, and redirects to `elt
     (iter
       (while (not (or (plusp (- (length (slot-value lazy-seq 'head)) (:offset lazy-seq))) (thunk-realized lazy-seq))))
       (force-thunk lazy-seq))
-   (when (plusp (length (slot-value lazy-seq 'head)))
-     (aref (slot-value lazy-seq 'head) (:offset lazy-seq)))))
+    (when (plusp (length (slot-value lazy-seq 'head)))
+      (aref (slot-value lazy-seq 'head) (:offset lazy-seq)))))
 
-(defgeneric tail (lazy-seq)
-  (:documentation "A function to get the \"rest\" of a sequence, dropping the head.
-Has specialized methods to work better for lazy sequences, and redirects to `subseq' for most other sequences."))
-(defmethod tail ((seq sequences:sequence))
-  (declare (optimize speed))
-  (subseq seq 1))
-(defmethod tail ((seq list))
-  (declare (optimize speed))
-  (cdr seq))
 (defmethod tail ((lazy-seq lazy-cons))
   (declare (optimize speed))
   (force-thunk lazy-seq)
@@ -182,6 +164,14 @@ Has specialized methods to work better for lazy sequences, and redirects to `sub
                    (lazy-vec (slot-value seq 'tail) (slot-value seq 'head) real-offset)))))))
 
 
+(defun force-elt (sequence index)
+  "An idiom to force evaluation up to the element at INDEX.
+Note that some compilers (like SBCL) optimize out `elt' calls whose return values aren't used.
+Returns the forced element."
+  (let ((x (elt sequence index)))
+    x))
+
+
 (defmacro lazy-cons-gen (expr)
   "A macro to create a `lazy-cons', with `expr' being used in its generator function to produce a list of the head and tail of the `lazy-cons'."
   `(make-instance 'lazy-cons
@@ -209,8 +199,8 @@ However, they internally cache realized contents. It is recommended to manually 
         (arr (cond
                ((adjustable-array-p arr) arr)
                ((serapeum:sequencep arr) (make-array (length arr)
-                                                               :initial-contents arr
-                                                               :adjustable t :fill-pointer t))
+                                                     :initial-contents arr
+                                                     :adjustable t :fill-pointer t))
                (t (make-array 0 :adjustable t :fill-pointer t)))))
     (let ((genseq genseq))
       (iter
@@ -419,10 +409,10 @@ If `seq' is nil, the output is nil."))
   "Returns the list of the `n` first elements of the sequence `s`."
   (declare (optimize space speed))
   (subst-gensyms (inner-takes inner-n seq)
-      (labels ((inner-takes (inner-n seq)
-                 (when (plusp inner-n)
-                   (lazy-cons (head seq) (inner-takes (1- inner-n) (tail seq))))))
-        (inner-takes n (copy-seq s)))))
+    (labels ((inner-takes (inner-n seq)
+               (when (plusp inner-n)
+                 (lazy-cons (head seq) (inner-takes (1- inner-n) (tail seq))))))
+      (inner-takes n (copy-seq s)))))
 (defmethod takes ((pred function) (s lazy-cons))
   "Returns the list of all elements of the sequence `s` before the first one that fails `pred'."
   (declare (optimize space speed))
@@ -471,7 +461,7 @@ If `seq' is nil, the output is nil."))
 
 (defmethod drops ((n integer) (s sequences:sequence))
   "Drops the first `n` elements of the sequence `s`."
-  (subseq s n))
+  (nthcdrs n s))
 (defmethod drops ((pred function) (s sequences:sequence))
   "Drops all elements of the sequence `s` before the first one that fails `pred'."
   (serapeum:drop-while pred s))
@@ -486,10 +476,10 @@ If `seq' is nil, the output is nil."))
    (loop
      for cell = s then (tail cell)
      repeat n
+     when (or (not cell) (sequences:emptyp cell))
+       do (return cell)
      when (not (thunk-realized cell))
        do (force-thunk cell)
-     when (not cell)
-       do (return cell)
      finally (return cell))))
 (defmethod drops ((pred function) (s lazy-cons))
   "Drops all elements of the sequence `s` before the first one that fails `pred'."
@@ -554,7 +544,7 @@ If `seq' is nil, the output is nil."))
       (princ "..." out))))
 
 (defmethod print-object ((c lazy-cons) out)
-    (format out "#<(lazy:") (print-lazy-cons c out) (format out ")>"))
+  (format out "#<(lazy:") (print-lazy-cons c out) (format out ")>"))
 
 (defun print-lazy-list (li &optional (out *standard-output*))
   (loop
@@ -569,7 +559,7 @@ If `seq' is nil, the output is nil."))
       (princ "..." out)))
 
 (defmethod print-object ((c lazy-vector) out)
-    (format out "#<[lazy:") (print-lazy-list c out) (format out "]>"))
+  (format out "#<[lazy:") (print-lazy-list c out) (format out "]>"))
 
 
 ;; (declaim (inline maps filters))
@@ -590,8 +580,8 @@ If `seq' is nil, the output is nil."))
                    (head inner-s)
                    (mapcar #'head inner-others))
             (maps-internal inner-f
-                   (tail inner-s)
-                   (mapcar #'tail inner-others))))
+                           (tail inner-s)
+                           (mapcar #'tail inner-others))))
           (t
            (lazy-cons
             (funcall inner-f (head inner-s))
@@ -633,7 +623,7 @@ If `seq' is nil, the output is nil."))
   )
 
 (defmethod filters (pred (s sequences:sequence))
-  (serapeum:filter pred s))
+  (filter pred s))
 
 (defmethod filters (pred (s lazy-vector))
   (declare (optimize space speed) (function pred))
@@ -672,16 +662,65 @@ If `seq' is nil, the output is nil."))
 
 (defmethod (setf sequences:elt) (value (sequence lazy-vector) index)
   (check-type index (integer 0))
-  (nthcdrs index sequence)
+
+  (head (nthcdrs index sequence))
+
+  ;; (print sequence)
   (let* ((arr (:head sequence))
          ;; Create a separate array to stop data-sharing with preceding lazy-vectors
          (replacement (make-array (length arr)
                                   :initial-contents arr
                                   :adjustable t
                                   :fill-pointer t)))
+    (setf (elt replacement (+ index (:offset sequence))) value)
     (setf (:head sequence) replacement)
     (setf (:tail sequence) (copy-seq (:tail sequence)))
     (setf (elt replacement index) value)))
+
+(defmethod (setf head) (value (seq sequence))
+  (setf (elt seq 0) value))
+
+(defmethod (setf tail) (value (seq sequence))
+  (sequences:adjust-sequence seq (1+ (length value))
+                             :initial-contents (concatenate 'list
+                                                            (list (head seq))
+                                                            value)))
+
+(defmethod (setf tail) (value (seq list))
+  (setf (cdr seq) value))
+
+(defmethod (setf tail) (value (seq vector))
+  (unless (adjustable-array-p seq)
+    (error "cannot set the tail of non-adjustable vectors"))
+  (unless (serapeum:sequencep value)
+    (error "the tail of a vector can only be set to the contents of a sequence"))
+  (iter
+    (for i from 0 below (length value))
+    (if (> i (length seq))
+        (vector-append! seq (elt value i))
+        (setf (elt seq (1+ i)) (elt value i)))))
+
+(defmethod (setf tail) (value (seq lazy-cons))
+  (setf (:tail seq) (apply #'lazy-values
+                           (iter (for idx below (length value))
+                             (collect (elt value idx))))
+        (thunk-gen seq) nil
+        (slot-value seq 'realized) t))
+
+(defmethod (setf tail) (value (seq lazy-vector))
+  (let ((is-empty (sequences:emptyp (get-current-contents seq))))
+    (setf (:head seq)
+          (make-array 1
+                      :initial-contents (if is-empty
+                                            '(nil)
+                                            (subseq (:head seq) 0 1))
+                      :adjustable t :fill-pointer t)))
+  (setf (:tail seq)
+        (lazy-cons
+         (aref (:head seq) 0)
+         (apply #'lazy-values
+                (iter (for idx below (length value))
+                  (collect (elt value idx)))))))
 
 
 (declaim (inline make-list-like))
@@ -750,7 +789,7 @@ If `seq' is nil, the output is nil."))
                      (nthcdrs start seq))))
     (if end
         (takes (- end start) starter)
-        starter)))
+        (copy-seq starter))))
 
 (declaim (inline item-to-if-function))
 (defun item-to-if-function (item test test-not)
@@ -810,10 +849,10 @@ If `seq' is nil, the output is nil."))
 (defmethod sequences:position-if (pred (seq lazy-cons) &key from-end (start 0) end key)
   (if from-end
       (position-if pred (thunk-value seq)
-            :from-end from-end
-            :start start
-            :end end
-            :key key)
+                   :from-end from-end
+                   :start start
+                   :end end
+                   :key key)
       (let* (
              ;; Get start and end constraints fulfilled
              (seq (subseq seq (or start 0) end))
@@ -833,16 +872,16 @@ If `seq' is nil, the output is nil."))
 (defmethod sequences:position (item (seq lazy-cons) &key from-end (start 0) end key test test-not)
   (if from-end
       (position item (thunk-value seq)
-            :from-end from-end
-            :start start
-            :end end
-            :key key
-            :test test
-            :test-not test-not)
+                :from-end from-end
+                :start start
+                :end end
+                :key key
+                :test test
+                :test-not test-not)
       (position-if (item-to-if-function item test test-not) seq
-               :key key
-               :start start
-               :end end)))
+                   :key key
+                   :start start
+                   :end end)))
 
 (defmethod sequences:copy-seq ((seq lazy-cons))
   (let ((head-val (:head seq))
@@ -861,8 +900,8 @@ If `seq' is nil, the output is nil."))
       ans)))
 (defmethod sequences:copy-seq ((seq lazy-vector))
   (lazy-vec (copy-seq (:tail seq))
-                (make-array (length (:head seq)) :initial-contents (:head seq) :adjustable t :fill-pointer t)
-                (:offset seq))
+            (make-array (length (:head seq)) :initial-contents (:head seq) :adjustable t :fill-pointer t)
+            (:offset seq))
   ;; (drops 0 seq)
   )
 
@@ -917,29 +956,29 @@ If `seq' is nil, the output is nil."))
   seq)
 
 ;;; TODO: Refactor heapq sort to work with lazy vectors?
-  ;; (labels ((srt (initstack)
-  ;;            (let ((stack initstack))
-  ;;              (loop
-  ;;                (let ((stack-head (head stack))
-  ;;                      (stack-rest (tail stack)))
-  ;;                  (let* (
-  ;;                         (pivot (head stack-head))
-  ;;                         (pivot-tail (tail stack-head))
-  ;;                         )
-  ;;                    (unless (null pivot)
-  ;;                      (labels ((before-p (v) (funcall pred v pivot)))
-  ;;                        (let ((before-pivot (filters #'before-p pivot-tail))
-  ;;                              (after-pivot (filters (complement #'before-p) pivot-tail)))
-  ;;                          (let ((new-stack (if after-pivot
-  ;;                                               (cons after-pivot stack-rest)
-  ;;                                               stack-rest)))
-  ;;                            (if (null before-pivot)
-  ;;                                (return (lazy-cons pivot (srt new-stack)))
-  ;;                                (setf stack
-  ;;                                      ;; (lazy-cons before-pivot (lazy-cons (list pivot) new-stack))
-  ;;                                      (lazy-list* before-pivot (list pivot) new-stack)
-  ;;                                      ))))))))))))
-  ;;   (srt (list (if key (maps key seq) seq))))
+;; (labels ((srt (initstack)
+;;            (let ((stack initstack))
+;;              (loop
+;;                (let ((stack-head (head stack))
+;;                      (stack-rest (tail stack)))
+;;                  (let* (
+;;                         (pivot (head stack-head))
+;;                         (pivot-tail (tail stack-head))
+;;                         )
+;;                    (unless (null pivot)
+;;                      (labels ((before-p (v) (funcall pred v pivot)))
+;;                        (let ((before-pivot (filters #'before-p pivot-tail))
+;;                              (after-pivot (filters (complement #'before-p) pivot-tail)))
+;;                          (let ((new-stack (if after-pivot
+;;                                               (cons after-pivot stack-rest)
+;;                                               stack-rest)))
+;;                            (if (null before-pivot)
+;;                                (return (lazy-cons pivot (srt new-stack)))
+;;                                (setf stack
+;;                                      ;; (lazy-cons before-pivot (lazy-cons (list pivot) new-stack))
+;;                                      (lazy-list* before-pivot (list pivot) new-stack)
+;;                                      ))))))))))))
+;;   (srt (list (if key (maps key seq) seq))))
 
 (defmethod sequences:sort ((seq lazy-vector) pred &key key)
   (declare (optimize space speed))
@@ -1000,10 +1039,10 @@ If `seq' is nil, the output is nil."))
 ;;; TODO: Ensure the above note isn't because of a bug in the lazy-vec synchronization code
 (defmethod sequences:make-sequence-iterator ((seq lazy-cons) &key from-end start end)
   (let* ((seq (if (or start end)
-                 (subseq seq
-                         (or start 0)
-                         (or end nil))
-                 seq))
+                  (subseq seq
+                          (or start 0)
+                          (or end nil))
+                  seq))
          (seq (if from-end (reverse seq) seq)))
     (values (cons (if (not from-end)
                       0
@@ -1034,10 +1073,10 @@ If `seq' is nil, the output is nil."))
 
 (defmethod sequences:make-sequence-iterator ((seq lazy-vector) &key from-end start end)
   (let* ((seq (if (or start end)
-                 (subseq seq
-                         (or start 0)
-                         (or end nil))
-                 seq))
+                  (subseq seq
+                          (or start 0)
+                          (or end nil))
+                  seq))
          (seq (if from-end (reverse seq) seq)))
     (values (if (not from-end)
                 0
@@ -1075,13 +1114,13 @@ If `seq' is nil, the output is nil."))
   (lazy-iterate #'1+ n))
 (defun lazy-iota (start-or-end &optional end (step 1))
   (subst-gensyms (lazy-iota-iterator curr inner-end inner-step)
-   (let ((start (if end start-or-end 0))
-         (inner-end (if end end start-or-end))
-         (inner-step step))
-     (labels ((lazy-iota-iterator (curr)
-                (unless (>= curr inner-end)
-                  (lazy-cons curr (lazy-iota-iterator (+ curr inner-step))))))
-       (lazy-iota-iterator start)))))
+    (let ((start (if end start-or-end 0))
+          (inner-end (if end end start-or-end))
+          (inner-step step))
+      (labels ((lazy-iota-iterator (curr)
+                 (unless (>= curr inner-end)
+                   (lazy-cons curr (lazy-iota-iterator (+ curr inner-step))))))
+        (lazy-iota-iterator start)))))
 (defun fibs ()
   ;; Function-based
   ;; (subst-gensyms (fun a b)
