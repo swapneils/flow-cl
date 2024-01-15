@@ -9,6 +9,7 @@
                       #:comment
                       #:filter
                       #:dict #:merge-tables
+                      #:push-end #:push-end-new
                       #:queue #:enq #:deq #:queue-empty-p
                       #:class-name-of
                       #:nest
@@ -51,12 +52,12 @@
   (:use :common-lisp :alexandria :iterate :flow-cl.util)
   (:local-nicknames
    (:sera :serapeum))
-  (:export node dataflow-node nn-node
-           link make-node make-dataflow-node make-nn-node make-tanh-nn-node
+  (:export node dataflow-node gradient-node
+           link make-node make-dataflow-node make-gradient-node make-tanh-gradient-node
            op+ op- op* op/ optanh
            bfs
            execute calculate propagate
-           derivative backprop-deriv train-simple-nn
+           derivative backprop-deriv simple-gradient-train
            ))
 
 (defpackage :flow-cl

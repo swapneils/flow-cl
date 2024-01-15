@@ -2,6 +2,8 @@
 
 (in-package :flow-cl.node)
 
+(declaim (optimize (speed 3)))
+
 (defclass node ()
   ((inputs :initform nil
            :initarg :inputs
@@ -19,9 +21,39 @@
               :initarg :execution
               :accessor :execution)))
 (defmethod print-object ((n node) out)
+  (when *print-readably*
+    (let ((*print-readably* nil))
+      (error 'print-not-readable :object n)))
   (format out "#<node ~A: ~A>"
           (:label n)
           (:value n)))
+
+(define-condition node-error (simple-error) ())
+(define-condition malformed-node-error (node-error)
+  ((node :initarg :node
+         :accessor :node)
+   (slots :initarg :slots
+          :initform nil
+          :accessor :slots)
+   (context :initarg :context
+            :initform nil
+            :accessor :context))
+  (:report (lambda (condition stream)
+             (assert (slot-value condition 'node) nil
+                     'unbound-slot
+                     :instance condition
+                     :name 'node)
+             (format stream
+                     "Node ~A is malformed.~@[~2% Malformed slots:~{~%~S has value ~S~}~]~@[~2%Context: ~A~]"
+                     (:node condition)
+                     (nreverse (reduce (lambda (coll curr)
+                                         (list* (slot-value (:node condition) curr) curr
+                                                coll))
+                                       (:slots condition)
+                                       :initial-value nil))
+                     (:context condition)))))
+
+
 (defun bfs-internal (start next-func map-func curr-queue)
   (when map-func
     (funcall map-func start))
@@ -35,35 +67,35 @@
                     curr-queue))))
 (defun bfs (start next-func &optional map-func)
   (bfs-internal start next-func map-func nil))
-(defmethod draw-graph ((n node) &optional format-func shape filename)
+(defmethod draw-graph ((n node) &key format (shape :rectangle) file)
   "Takes a node in a graph and draws the entire graph"
   (let (nodelist
         edgelist
-        (format-func (or format-func
-                         (lambda (x)
-                           (format nil "~A (~A)"
-                                   (:label x)
-                                   (:value x))))))
+        (format (or format
+                    (lambda (x)
+                      (format nil "~A (~A)"
+                              (:label x)
+                              (:value x))))))
     (bfs n
          (lambda (n)
            (filter (compose #'not
                             (rcurry #'member
                                     nodelist
                                     :test #'equal)
-                            format-func)
+                            format)
                    (append (:inputs n)
                            (:outputs n))))
          (lambda (n)
-           (push (funcall format-func n) nodelist)
+           (push (funcall format n) nodelist)
            (flet ((links-to-pairs (node
                                    nodelist
                                    &optional reverse)
-                    (let ((curr-label (funcall format-func node))
-                          (other-labels (mapcar format-func nodelist)))
+                    (let ((curr-label (funcall format node))
+                          (other-labels (mapcar format nodelist)))
                       (with-boolean (reverse)
                         (mapcar (boolean-if reverse
-                                            (curry #'cons curr-label)
-                                            (rcurry #'cons curr-label))
+                                            (rcurry #'cons curr-label)
+                                            (curry #'cons curr-label))
                                 other-labels)))))
              (appendf edgelist
                       (links-to-pairs n (:outputs n))
@@ -82,10 +114,10 @@
               (digraph:edges g))
       (apply #'digraph.dot:draw
              `(,g
-               :shape ,(or shape :rectangle)
-               ,@(when filename `(:filename ,filename)))))))
+               :shape ,shape
+               ,@(when file `(:filename ,file)))))))
 
-(defun execute (n)
+(defmethod execute ((n node))
   (apply (:execution n)
          (mapcar (lambda (%) (:value %)) (:inputs n))))
 
@@ -95,16 +127,26 @@
     (setf (:value n) nil))
   (or (:value n)
       (progn
-        (mapcar (rcurry #'calculate clear) (:inputs n))
+        (not (some #'null
+                   (mapcar (rcurry #'calculate clear)
+                           (:inputs n))))
+        (assert (:execution n)
+            nil
+            'malformed-node-error
+            :node n
+            :slots '(execution)
+            :context "While in `calculate'")
         (setf (:value n) (execute n)))))
 
 (defmethod propagate-internal ((n node) (ns sequence) unoriginal)
   (declare (dynamic-extent ns))
-  (with-boolean (unoriginal)
-    (boolean-when unoriginal
-      (setf (:value n) nil)))
-  (when (:execution n) (calculate n))
-  (setf ns (union ns (:outputs n)))
+  (let ((old-val (:value n)))
+    (with-boolean (unoriginal)
+      (boolean-when unoriginal
+        (setf (:value n) nil)))
+    (when (:execution n) (calculate n))
+    (unless (equal (:value n) old-val)
+      (setf ns (nunion ns (:outputs n)))))
   (propagate-internal (pop ns) ns t))
 (defmethod propagate-internal ((n null) (ns sequence) unoriginal)
   (declare (dynamic-extent ns))
@@ -127,12 +169,13 @@
                  :execution exec))
 (declaim (inline make-node))
 
-(let ((a (make-node 'a 3))
-      (b (make-node 'b 5))
-      (c (make-node 'c nil #'+)))
-  (link a c)
-  (link b c)
-  (execute c))
+(comment
+  (let ((a (make-node 'a 3))
+        (b (make-node 'b 5))
+        (c (make-node 'c nil #'+)))
+    (link a c)
+    (link b c)
+    (execute c)))
 
 (defun remove-nth (li n)
   (declare (sequence li) (integer n))
@@ -223,22 +266,26 @@
   (when (every (curry #'slot-boundp object)
                (mapcar #'closer-mop:slot-definition-name
                        (closer-mop:compute-slots class)))
-    (handler-case
-        (switch ((closer-mop:slot-definition-name slot) :test #'equal)
-          ('value
-           (propagate object))
-          ('inputs
-           (setf (:value object) nil)
-           (when (:execution object)
-             (calculate object)))
-          ('execution
-           (when (and (slot-value object 'execution)
-                      (not (emptyp (slot-value object 'value))))
+    (let ((current-val (:value object)))
+      (handler-case
+          (switch ((closer-mop:slot-definition-name slot) :test #'equal)
+            ('value
+             (propagate object))
+            ('inputs
              (setf (:value object) nil)
-             (calculate object)
-             (propagate object))))
-      (error (e) (warn "~A while updating dataflow graph: ~A"
-                       (type-of e) e)))))
+             (when (:execution object)
+               (calculate object)))
+            ('execution
+             (when (and (slot-value object 'execution)
+                        (not (emptyp (slot-value object 'value))))
+               (setf (:value object) nil)
+               (calculate object)
+               (unless (equal (:value object) current-val)
+                 (propagate object)))))
+        (malformed-node-error nil)
+        (node-error (e)
+          (warn "Node error (~A) while updating dataflow graph: ~A"
+                (type-of e) e))))))
 
 (comment
   (let* ((a (make-dataflow-node 'a 3))
@@ -260,54 +307,56 @@
     (print (list a b))
     (setf (:value a) 3)
     (print (list a b)))
-  (let* ((a (make-nn-node 'a 5))
+  (let* ((a (make-gradient-node 'a 5))
          (b (time (op* 2 (op- a 4)))))
     (print "calculate")
     (time (calculate b))
     (print "backprop")
     (time (backprop-deriv b))
     (print "draw")
-    (time (draw-graph b (lambda (node)
-                          (format nil "~A (~A) (grad ~A)"
-                                  (:label node)
-                                  (:value node)
-                                  (gethash b (:grad node) 0)))))
+    (time (draw-graph b
+                      :format (lambda (node)
+                                (format nil "~A (~A) (grad ~A)"
+                                        (:label node)
+                                        (:value node)
+                                        (gethash b (:grad node) 0)))))
     (print "train")
-    (time (train-simple-nn (list a b) #'identity))
+    (time (simple-gradient-train (list a b) #'identity))
     (print "calc2")
     (time (calculate b t))
     (print "draw2")
-    (time (draw-graph b (lambda (node)
-                          (format nil "~A (~A) (grad ~A)"
-                                  (:label node)
-                                  (:value node)
-                                  (funcall (sera:juxt (lambda (%)
-                                                        (gethash a % 0))
-                                                      (lambda (%)
-                                                        (gethash b % 0)))
-                                           (:grad node))))
-                      nil "digraph2.png"))))
+    (time (draw-graph b
+                      :format (lambda (node)
+                                (format nil "~A (~A) (grad ~A)"
+                                        (:label node)
+                                        (:value node)
+                                        (funcall (sera:juxt (lambda (%)
+                                                              (gethash a % 0))
+                                                            (lambda (%)
+                                                              (gethash b % 0)))
+                                                 (:grad node))))
+                      :file "digraph2.png"))))
 
 
-(defclass nn-node (node)
+(defclass gradient-node (node)
   ((grad :initform (serapeum:dict)
          :accessor :grad)
    (derivative :initform nil
                :initarg :derivative)))
-(defun make-nn-node (&optional label val exec)
-  (make-instance 'nn-node
+(defun make-gradient-node (&optional label val exec)
+  (make-instance 'gradient-node
                  :label (gensym (format nil "~A_"
                                         (or label "node")))
                  :value val
                  :execution exec))
-(defun make-tanh-nn-node (label &rest inputs)
-  (make-instance 'nn-node
+(defun make-tanh-gradient-node (label &rest inputs)
+  (make-instance 'gradient-node
                  :label (gensym (format nil "~A_"
                                         (or label "node")))
                  :inputs (mapcar (lambda (inp)
                                    (typecase inp
                                      (node inp)
-                                     (t (make-nn-node nil inp))))
+                                     (t (make-gradient-node nil inp))))
                                  inputs)
                  :execution (compose #'tanh #'+)
                  :derivative (lambda (node &rest args)
@@ -318,7 +367,7 @@
                                  (loop for i below (length args)
                                        collecting d)))))
 
-(defvar *derivative-increment* 0.000001d0)
+(defparameter *derivative-increment* 0.000001d0)
 (defvar *derivative-dict* (dict)
   "A dictionary containing functions, or symbols bound to functions,
 and associated derivative functions.
@@ -399,7 +448,7 @@ args = ~A"
                (when (:execution curr-node)
                  (mapcar (lambda (inp deriv)
                            (list inp
-                                 curr-node
+                                 ;; curr-node
                                  (gethash n (:grad curr-node))
                                  deriv))
                          (:inputs curr-node)
@@ -412,8 +461,13 @@ args = ~A"
       (macrolet ((mod-grad (mac inp val &optional (targ 'n))
                    `(,mac (gethash ,targ (:grad ,inp)) ,val)))
         (let ((q (apply #'queue (get-next-values n))))
+          (declare (dynamic-extent q))
           (iter (until (serapeum:queue-empty-p q))
-            (for (curr prev prev-grad d) = (deq q))
+            (for (curr
+                  ;; prev
+                  prev-grad
+                  d)
+                 = (deq q))
             (unless (coveredp curr)
               (mod-grad setf curr 0)
               (covered curr))
@@ -421,14 +475,14 @@ args = ~A"
             (when (:execution curr)
               (mapcar (rcurry #'enq q) (get-next-values curr)))))))))
 
-(defvar *training-increment* 0.0001d0
+(defparameter *training-increment* 0.0001d0
   "The default increment to change values of nodes without :execution parameters.
 Multiplied by the gradient to get the amount changed.
 If this value is a function, takes the current node and a list of outputs nodes,
 and returns an increment value")
 
-(defun train-simple-nn (output-nodes loss-function)
-  "Trains a simple nn using `backprop-deriv' and `*training-increment*'
+(defun simple-gradient-train (output-nodes loss-function)
+  "Trains a simple gradient node graph using `backprop-deriv' and `*training-increment*'
 OUTPUT-NODES are the nodes in the graph
 LOSS-FUNCTION should take as input the `:value' parameters of OUTPUT-NODES,
 and output a list of values corresponding to each of the output nodes."

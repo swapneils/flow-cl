@@ -67,12 +67,12 @@
          `((3 92) (20 160) (3 92)))))
   (testing "`backprop-deriv' and `train' operate correctly in simple cases."
     (ok (outputs
-            (let* ((a (make-nn-node 'a 5))
+            (let* ((a (make-gradient-node 'a 5))
                    (b (op* 2 (op- a 4))))
               (format t "calculate: ~A  backprop: ~A  train: ~A  calc2: ~A"
                       (calculate b)
                       (backprop-deriv b)
-                      (train-simple-nn (list a b) #'identity)
+                      (simple-gradient-train (list a b) #'identity)
                       (calculate b t)))
             "calculate: 2  backprop: NIL  train: NIL  calc2: 1.9972002600000007d0"))))
 
