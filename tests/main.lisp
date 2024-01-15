@@ -1,10 +1,10 @@
+;; NOTE: To run these tests, execute `(asdf:test-system :flow-cl)' in your REPL.
+
 (defpackage flow-cl/tests/main
   (:use :cl
    :flow-cl
         :rove))
 (in-package :flow-cl/tests/main)
-
-;; NOTE: To run this test file, execute `(asdf:test-system :flow-cl)' in your Lisp.
 
 (deftest test-testing-framework
   (testing "(= 1 1) should be true"
