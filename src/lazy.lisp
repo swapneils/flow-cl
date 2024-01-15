@@ -531,6 +531,9 @@ If `seq' is nil, the output is nil."))
   (princ (if (thunk-realized th) (slot-value th 'head) "...") out))
 
 (defmethod print-object ((th thunk) out)
+  (when *print-readably*
+    (let ((*print-readably* nil))
+      (error 'print-not-readable :object th)))
   (format out "#<lazy:") (print-thunk th out) (format out ">"))
 
 (defun print-lazy-cons (c &optional (out *standard-output*))
@@ -544,9 +547,12 @@ If `seq' is nil, the output is nil."))
       (princ "..." out))))
 
 (defmethod print-object ((c lazy-cons) out)
+  (when *print-readably*
+    (let ((*print-readably* nil))
+      (error 'print-not-readable :object c)))
   (format out "#<(lazy:") (print-lazy-cons c out) (format out ")>"))
 
-(defun print-lazy-list (li &optional (out *standard-output*))
+(defun print-lazy-vector (li &optional (out *standard-output*))
   (loop
     :for i from (:offset li)
     :while (< i (length (slot-value li 'head)))
@@ -559,7 +565,10 @@ If `seq' is nil, the output is nil."))
       (princ "..." out)))
 
 (defmethod print-object ((c lazy-vector) out)
-  (format out "#<[lazy:") (print-lazy-list c out) (format out "]>"))
+  (when *print-readably*
+    (let ((*print-readably* nil))
+      (error 'print-not-readable :object c)))
+  (format out "#<[lazy:") (print-lazy-vector c out) (format out "]>"))
 
 
 ;; (declaim (inline maps filters))
