@@ -2,7 +2,7 @@
   :version "0.1.0"
   :author "Swapneil Singh"
   :license "MIT"
-  :depends-on ("org.tfeb.conduit-packages"
+  :depends-on ("org.tfeb.conduit-packages/define-package"
                "alexandria"
                "serapeum"
                "iterate"
@@ -15,12 +15,12 @@
   :components ((:module "src"
                 :components
                 ((:file "package")
-                 (:file "util")
-                 (:file "fixes")
-                 (:file "lazy")
-                 (:file "plazy")
-                 (:file "node")
-                 (:file "main"))))
+                 (:file "util" :depends-on ("package"))
+                 (:file "fixes" :depends-on ("util"))
+                 (:file "lazy" :depends-on ("util"))
+                 (:file "plazy" :depends-on ("lazy"))
+                 (:file "node" :depends-on ("util"))
+                 (:file "main" :depends-on ("lazy" "plazy" "node")))))
   :description "An extension of Common Lisp to support an idiosyncratic view of dataflow-based programming."
   :in-order-to ((test-op (test-op "flow-cl/tests"))))
 
