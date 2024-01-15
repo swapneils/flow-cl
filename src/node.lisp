@@ -145,7 +145,11 @@
       (boolean-when unoriginal
         (setf (:value n) nil)))
     (when (:execution n) (calculate n))
-    (unless (equal (:value n) old-val)
+    (unless (and
+             ;; Propgate the first value regardless of calculate-based change
+             unoriginal
+             ;; For other values, check if they changed
+             (equal (:value n) old-val))
       (setf ns (nunion ns (:outputs n)))))
   (propagate-internal (pop ns) ns t))
 (defmethod propagate-internal ((n null) (ns sequence) unoriginal)
@@ -282,9 +286,8 @@
                (calculate object)
                (unless (equal (:value object) current-val)
                  (propagate object)))))
-        (malformed-node-error nil)
-        (node-error (e)
-          (warn "Node error (~A) while updating dataflow graph: ~A"
+        (malformed-node-error (e)
+          (warn "Malformed node error (~A) while updating dataflow graph: ~A"
                 (type-of e) e))))))
 
 (comment
