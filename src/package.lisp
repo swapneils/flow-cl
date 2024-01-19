@@ -12,7 +12,7 @@
                       #:push-end #:push-end-new
                       #:queue #:enq #:deq #:queue-empty-p
                       #:class-name-of
-                      #:nest
+                      #:nest #:~> #:~>>
                       #:juxt
                       #:with-boolean #:boolean-if #:boolean-when #:boolean-unless)
   (:export #:subst-symbols #:subst-symbols-if #:subst-gensyms
@@ -53,11 +53,12 @@
   (:local-nicknames
    (:sera :serapeum))
   (:export node dataflow-node gradient-node
-           link make-node make-dataflow-node make-gradient-node make-tanh-gradient-node
+           link-nodes make-node make-dataflow-node make-gradient-node make-tanh-gradient-node
            op+ op- op* op/ optanh
-           bfs
+           traverse bfs
            execute calculate propagate
            derivative backprop-deriv simple-gradient-train
+           graph
            ))
 
 (defpackage :flow-cl

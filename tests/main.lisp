@@ -54,6 +54,14 @@
                (every #'= b (list 1 3 5 7 9)))))))
 
 (deftest basic-node-tests
+  (testing "link-nodes and execute give correct answers in simple cases"
+    (ok (equal (let ((a (make-node 'a 3))
+                     (b (make-node 'b 5))
+                     (c (make-node 'c nil #'+)))
+                 (link-nodes a c)
+                 (link-nodes b c)
+                 (execute c))
+               8)))
   (testing "`dataflow-node' structure operates correctly in simple cases."
     (ok (equal
          (let* ((a (make-dataflow-node 'a 3))
@@ -64,7 +72,36 @@
            (push (mapcar :value (list a b)) collector)
            (setf (:value a) 3)
            (push (mapcar :value (list a b)) collector))
-         `((3 92) (20 160) (3 92)))))
+         `((3 92) (20 160) (3 92))))
+    (ok (equal
+         (handler-bind ((warning #'muffle-warning))
+           (let* ((a (make-dataflow-node 'a 3))
+                  (b (make-dataflow-node 'b))
+                  (c (op+ a b))
+                  (d (op* a c))
+                  (e (op- d b))
+                  f g)
+             (flet ((get-node-values () (mapcar :value (list a b c d e))))
+               (setf (:value b) 5)
+               (setf f (get-node-values))
+               (setf (:value a) 4)
+               (setf g (get-node-values))
+               (print (list f g)))))
+         `((3 5 8 24 19) (4 5 9 36 31))))
+    (ok (equal
+         (let* ((a (make-dataflow-node 'a 3))
+                (b (op* (op+ a 20) 4))
+                outs)
+           (flet ((get-values () (mapcar :value (list a b))))
+             (push (get-values) outs)
+             (setf (:value a) 20)
+             (push (get-values) outs)
+             (calculate b)
+             (push (get-values) outs)
+             (setf (:value a) 3)
+             (push (get-values) outs)
+             (reverse outs)))
+         `((3 92) (20 160) (20 160) (3 92)))))
   (testing "`backprop-deriv' and `train' operate correctly in simple cases."
     (ok (outputs
             (let* ((a (make-gradient-node 'a 5))
