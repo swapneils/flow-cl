@@ -1,4 +1,5 @@
 ;; NOTE: To run these tests, execute `(asdf:test-system :flow-cl)' in your REPL.
+;; This file tests the exported API for flow-cl
 
 (defpackage flow-cl/tests/main
   (:use :cl
@@ -67,11 +68,12 @@
          (let* ((a (make-dataflow-node 'a 3))
                 (b (op* (op+ a 20) 4))
                 collector)
-           (push (mapcar :value (list a b)) collector)
-           (setf (:value a) 20)
-           (push (mapcar :value (list a b)) collector)
-           (setf (:value a) 3)
-           (push (mapcar :value (list a b)) collector))
+           (flet ((get-node-values () (mapcar :value (list a b))))
+             (push (get-node-values) collector)
+             (setf (:value a) 20)
+             (push (get-node-values) collector)
+             (setf (:value a) 3)
+             (push (get-node-values) collector)))
          `((3 92) (20 160) (3 92))))
     (ok (equal
          (handler-bind ((warning #'muffle-warning))
@@ -80,13 +82,13 @@
                   (c (op+ a b))
                   (d (op* a c))
                   (e (op- d b))
-                  f g)
+                  outs)
              (flet ((get-node-values () (mapcar :value (list a b c d e))))
                (setf (:value b) 5)
-               (setf f (get-node-values))
+               (push (get-node-values) outs)
                (setf (:value a) 4)
-               (setf g (get-node-values))
-               (print (list f g)))))
+               (push (get-node-values) outs))
+             (reverse outs)))
          `((3 5 8 24 19) (4 5 9 36 31))))
     (ok (equal
          (let* ((a (make-dataflow-node 'a 3))
