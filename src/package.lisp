@@ -53,7 +53,9 @@
   (:local-nicknames
    (:sera :serapeum))
   (:export node dataflow-node gradient-node
-           link-nodes make-node make-dataflow-node make-gradient-node make-tanh-gradient-node
+           make-node
+           link-nodes unlink-nodes replace-node
+           make-dataflow-node make-gradient-node make-tanh-gradient-node
            op+ op- op* op/ optanh
            traverse bfs
            execute calculate propagate

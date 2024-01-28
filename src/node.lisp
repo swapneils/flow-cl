@@ -214,6 +214,9 @@ The hash-table's keys are the output of KEY on each of the visited graph nodes."
 (defun link-nodes (a b)
   (appendf (:inputs b) (list a))
   (appendf (:outputs a) (list b)))
+(defun unlink-nodes (a b)
+  (setf (:inputs b) (remove a (:inputs b) :test 'equal))
+  (setf (:outputs a) (remove b (:outputs a) :test 'equal)))
 
 (defun make-node (&optional (label "node") val exec)
   (make-instance 'node
@@ -227,6 +230,14 @@ The hash-table's keys are the output of KEY on each of the visited graph nodes."
                  :label (gensym (format nil "~Acopy" (:label n)))
                  :value (:value n)
                  :execution (:execution n)))
+
+(defun replace-node (old new)
+  (iter (for inp in (:inputs old))
+    (link-nodes inp new)
+    (unlink-nodes inp old))
+  (iter (for out in (:outputs old))
+    (link-nodes new out)
+    (unlink-nodes old out)))
 
 (defun remove-nth (li n)
   (declare (sequence li) (integer n))
