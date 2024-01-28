@@ -149,3 +149,25 @@ Redirects to `subseq' for most sequences."))
 (defmethod tail ((seq list))
   (declare (optimize speed))
   (cdr seq))
+
+
+#+sbcl
+(defmacro with-temp-arena (size &body body &environment env)
+  "A macro wrapping the local creation and use of a memory arena.
+`size' must be an integer determining the size of the arena."
+  (let ((int-at-compile (typep size 'integer env)))
+    (with-gensyms (s a)
+      `(serapeum:nest
+        (let ((,s ,size))
+          ,@(unless int-at-compile
+              (list `(assert (typep ,s 'integer) nil "The form ~A is not of type INTEGER!" ',size))))
+        (let ((,a (sb-vm:new-arena ,s))))
+        (unwind-protect (sb-vm:with-arena (,a) ,@body (values)))
+        (sb-vm:destroy-arena ,a)))))
+
+#-(or sbcl)
+(defmacro with-temp-arena (size &body body &environment env)
+  "A macro wrapping the local creation and use of a memory arena.
+`size' must be an integer determining the size of the arena."
+  (declare (ignore size env))
+  `(progn ,@body))

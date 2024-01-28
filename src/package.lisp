@@ -19,7 +19,8 @@
            #:vector-insert-at #:simple-vector-insert-at
            #:vector-append #:vector-append!
            #:letf
-           #:head #:tail))
+           #:head #:tail
+           #:with-temp-arena))
 
 (defpackage :flow-cl.lazy
   (:use :common-lisp :alexandria :iterate :flow-cl.util :lparallel)
