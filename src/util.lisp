@@ -154,7 +154,8 @@ Redirects to `subseq' for most sequences."))
 #+sbcl
 (defmacro with-temp-arena (size &body body &environment env)
   "A macro wrapping the local creation and use of a memory arena.
-`size' must be an integer determining the size of the arena."
+`size' must be an integer determining the size of the arena.
+This form returns nothing, so as to avoid holding onto pointers from the heap."
   (let ((int-at-compile (typep size 'integer env)))
     (with-gensyms (s a)
       `(serapeum:nest
@@ -168,6 +169,7 @@ Redirects to `subseq' for most sequences."))
 #-(or sbcl)
 (defmacro with-temp-arena (size &body body &environment env)
   "A macro wrapping the local creation and use of a memory arena.
-`size' must be an integer determining the size of the arena."
+`size' must be an integer determining the size of the arena.
+This form returns nothing, so as to avoid holding onto pointers from the heap."
   (declare (ignore size env))
   `(progn ,@body))
