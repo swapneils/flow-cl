@@ -151,20 +151,45 @@ Redirects to `subseq' for most sequences."))
   (cdr seq))
 
 
+(defparameter *arena* nil
+  "A dynamic variable for containing arena objects.")
+(defparameter *in-arena* nil
+  "A dynamic variable to track whether you are currently in an arena.")
+
 #+sbcl
 (defmacro with-temp-arena (size &body body &environment env)
-  "A macro wrapping the local creation and use of a memory arena.
+  "A macro wrapping the creation of a local memory arena.
 `size' must be an integer determining the size of the arena.
-This form returns nothing, so as to avoid holding onto pointers from the heap."
+Use `in-arena' in BODY to denote code that uses the arena defined by this form.
+Note that overfilling the arena will likely crash your CL implementation.
+Note that some implementations restrict SIZE to be above/below certain values."
   (let ((int-at-compile (typep size 'integer env)))
-    (with-gensyms (s a)
+    (with-gensyms (s)
       `(serapeum:nest
         (let ((,s ,size))
           ,@(unless int-at-compile
               (list `(assert (typep ,s 'integer) nil "The form ~A is not of type INTEGER!" ',size))))
-        (let ((,a (sb-vm:new-arena ,s))))
-        (unwind-protect (sb-vm:with-arena (,a) ,@body (values)))
-        (sb-vm:destroy-arena ,a)))))
+        (let ((*arena* (sb-vm:new-arena ,s))))
+        (unwind-protect (progn ,@body))
+        (sb-vm:destroy-arena *arena*)))))
+
+#+sbcl
+(defmacro in-arena (&body body)
+  "A form that executes its body with an arena defined by `with-temp-arena', rather than the heap.
+Returns nothing to avoid retaining arena pointers.
+Acts as a `progn' with no return if there is no active temporary arena."
+  `(if *arena*
+       (sb-vm:with-arena (*arena*)
+         ,@body (values))
+       (progn ,@body (values))))
+
+#+sbcl
+(defmacro in-heap (&body body)
+  "A form that escapes an `in-arena' form. Acts as a `progn' if there is no active `in-arena' form."
+  `(if *in-arena*
+       (sb-vm:without-arena
+         ,@body)
+       (progn ,@body)))
 
 #-(or sbcl)
 (defmacro with-temp-arena (size &body body &environment env)
@@ -172,4 +197,16 @@ This form returns nothing, so as to avoid holding onto pointers from the heap."
 `size' must be an integer determining the size of the arena.
 This form returns nothing, so as to avoid holding onto pointers from the heap."
   (declare (ignore size env))
+  `(progn ,@body (values)))
+
+#-(or sbcl)
+(defmacro in-arena (&body body)
+  "A form that executes its body with an arena defined by `with-temp-arena', rather than the heap.
+Returns nothing to avoid retaining arena pointers.
+Acts as a `progn' with no return if there is no active temporary arena."
+  `(progn ,@body (values)))
+
+#-(or sbcl)
+(defmacro in-heap (&body body)
+  "A form that escapes an `in-arena' form. Acts as a `progn' if there is no active `in-arena' form."
   `(progn ,@body))
