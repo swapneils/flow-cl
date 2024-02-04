@@ -1,15 +1,17 @@
 * FlowCL
+A graph-oriented, optionally-typed, optionally-verifiable language built over Common Lisp.
 
 *WARNING: FlowCL is currently in beta! Both the code itself and the paradigm it aims to crystallize in code are subject to change.*
 + In addition, the project structure is in flux, and it is currently published primarly to get external overviews, criticism, and recommendations on relevant materials (e.g. similar projects or writing on similar concepts). This notification will be removed from the README when enough features have been implemented to provide an idea of how v1 of the API should be designed.
 
-FlowCL is a long-term project on my part, attempting to extend Common Lisp with the ability to focus programming on designing programs around information flow.
+The Flow language is a long-term project on my part, attempting to extend Common Lisp (and hopefully other runtimes in the future) with the ability to interactively build programs around the flow of information.
 
-FlowCL is intended to work in the same vein as "gradual typing", allowing for partial integration and different levels of integration into CL code.
+There are a few core concepts which guide the design and implementation of Flow:
+- Graph-oriented: Flow is intended to
 
-FlowCL will make use of existing libraries if appropriate, but will not compromise on its own vision for the sake of easy integration of those libraries. This also extends to encapsulating usage of external libraries, so as to not force the user to load any more of them than is necessary.
-+ *However*, this is distinct from the goal of making FlowCL /compatible/ with usage of those libraries in the projects of its users; general drop-in capabilities remain a central goal of this project.
+FlowCL is intended to integrate with its host languages, allowing integration into existing codebases.
 
+** Design principles
 Some key principles of the FlowCL project:
 
 - *Compatibility*: FlowCL strives to be compatible with code, libraries, and paradigms used by the framework's users.
@@ -43,10 +45,80 @@ Place this repository somewhere ASDF or Quicklisp can find it as a local project
 ** Usage
 
 ** Progress and Roadmap
-The current focus is to implement a gradual framework for lazy programming. This has been partially completed, and the lazy-cons and lazy-vector objects are currently usable (and compatible with sequence functions due to `trivial-extensible-sequences`), as is the core thunk object. For more information, look at the code for lazy programming.
 
-Future plans are vaguer, but currently involve the following points:
-- Complete the lazy programming sub-framework.
+Future plans are currently vague, but currently involve the following points:
+- [ ] Develop a prototype for node/graph computation
+  - [ ] Develop an extensible node abstraction
+    - Currently thinking about making this just a directed graph of inputs/outputs, maybe with setf advice to track a combined set of both
+    - [ ] Figure out how to contain computations in a node
+    - [ ] Figure out how to execute a node
+    - [ ] Figure out how to traverse nodes by their connections
+    - [ ] Figure out how to define behavior for specific subclasses
+  - [ ] Develop some proofs-of-concept for the usefulness of the node abstraction in normal CL code
+  - [ ] Develop a compilation paradigm for networks of nodes
+    - [ ] Figure out how to find patterns in graphs and replace them with more efficient alternatives
+    - [ ] Figure out how to denote compilation behavior of individual nodes in relation to their contexts in a graph
+      - [ ] Figure out what kinds of behavior and relevant aspects might be needed
+      - [ ] Figure out a way to implement compilation and aspect-tracking in an extensible manner
+      - [ ] Figure out how to actually denote the compilation behavior
+      - [ ] Figure out how to deal with different behavior of different nodes/node-classes
+    - [ ] Figure out how to choose between multiple possible compilation directions
+  - [ ] Develop an extensible object/class abstraction for graphs
+    - A graph is intended to be a collection of nodes with aggregate behavior.
+    - [ ] Figure out how to collect nodes in a graph and refer to a graph's components
+      - [ ] Figure out how to store the nodes
+      - [ ] Figure out how to access a graph's components with reasonable efficiency
+      - [ ] Figure out how to execute a graph
+      - [ ] Figure out how to compile a graph
+        - [ ] Figure out how to denote compilation characteristics of graphs
+        - [ ] Figure out how graph compilation interacts with e.g. one graph being contained by another
+    - [ ] Figure out graph-specific operations
+      - [ ] Comparison between graphs
+        - Should probably have a way to determine if graphs have the same structure, and if so call them equal
+      - [ ] Copying graphs
+      - [ ] Including one graph in another
+        - [ ] How do we do this without sharing the same graph object across instances?
+        - [ ] How do we update the included graphs if the original changes?
+        - [ ] Compilation
+  - [ ] Develop a way for graph programs to modify themselves, i.e. graph macros
+    - [ ] Figure out the semantics of execution times and graph compilation
+    - [ ] Figure out how to formalize the concept of modifiers on existing nodes/graphs/graph-segments
+    - [ ] Figure out how to formalize the concept of
+- [ ] Develop a framework for execution contexts
+  - [ ] Tracking the current execution environment as a graph is traversed
+    - [ ] Storing the execution environment
+    - [ ] Representing computations that read/write to the execution environment
+    - [ ] Efficiency
+    - [ ] Figuring out the semantics to denote "universes" in the graph
+      - [ ] Syntax for this?
+      - [ ] How will this actually work?
+        - Look at Lean and similar languages for inspiration here?
+    - [ ] Inheritance between environments
+      - [ ] Dealing with inherited values and their updates
+      - [ ] Dealing with access syntax/semantics
+      - [ ] Multiple inheritance
+        - Most likely this will end up creating a DAG of environments
+      - [ ] Representing the outside world (i.e. the host language and external environment) in the universe context
+        - Likely will be the parent of everything else, with the Flow runtime creating a child universe for itself from which other universes can inherit
+    - [ ] Moving execution between different places on the graph
+      - How do I maintain the execution-context continuations in this case?
+      - How do we get unwind-protect like functionality, for cases where
+  - [ ] Parallel execution of graphs
+    - This would need to be worked out along with the execution contexts, to avoid the latter obstructing the former and requiring hacky workarounds.
+- [ ] Develop a dependent typing framework for graphs
+  - [ ] Study dependent typing
+  - [ ] Implement the framework for atoms, functions, macros, etc
+  - [ ] Implement the framework for types
+  - [ ] Implement the framework for universes
+- [ ] Develop the user interface for this language
+  - Needs to be done in tandem with the other steps
+  - [ ] Syntax?
+  - [ ] Representation of data/programs?
+  - [ ] Restrictions on user behavior and their bypasses?
+
+- Complete the lazy programming sub-framework?
+  This may not be worth it, compared to just starting anew
+  This may be better served in a separate library rather than as a part of the FlowCL implementation.
 
   - Improving the efficiency.
 
@@ -90,16 +162,6 @@ Future plans are vaguer, but currently involve the following points:
     Another mode would be to make specific use-cases for lazy-sequences (such as wrapping streams) and writing drop-in macros to implement that specific feature.
 
     Ideally, another mode will be added using a macro to implement a DSL for lazy programming. The result of code written in that DSL would be the output of the form, allowing for integration into normal CL code. However, *this is a minor goal*, and takes a backseat to working on other subsystems of the overall FlowCL framework.
-
-- Develop a framework for flow-based programming (currently conceptualized as *defining fully self-contained programmatic structures which compose as directed node-edge graphs into larger structures*).
-
-  This paradigm makes it far easier to approach problem-solving as the construction of layered domain-specific modules or frameworks.
-
-  - A key goal of this framework should be to allow easily converting code into and out of it. The inwards direction allows for easy adoption of the framework, while the outward direction would be useful for user-designed code optimizations (and, before the project reaches maturity, escaping its limitations).
-
-  - Ideally, this system should give first-class support to lexical construction of these flow components, to allow easy integration with functional-style Common Lisp code (while also being unlikely to impede other paradigms, as functional constructs can often be integrated into larger non-functional procedures).
-
-  - Ideally, this system should optimize the internal implementation of flow components by using the information it has on their structure (such as the independence guarantee, or optional user-defined attributes), allowing for larger systems to be easily created while maintaining decent performance.
 
 - ...
 
