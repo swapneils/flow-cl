@@ -117,8 +117,24 @@ Future plans are currently vague, but currently involve the following points:
       - How do we get unwind-protect like functionality, for cases where
   - [ ] Parallel execution of graphs
     - This would need to be worked out along with the execution contexts, to avoid the latter obstructing the former and requiring hacky workarounds.
-- [ ] Develop a dependent typing framework for graphs
-  - [ ] Study dependent typing
+- [ ] Develop an optional dependent typing framework for graphs
+  - [ ] Study dependent typing and proof-based languages
+    - [ ] Figure out the semantics of type representation and manipulation
+    - [ ] Figure out the semantics for type tracking
+  - [ ] Study HM typing
+    - [ ] Figure out the semantics of type representation and manipulation
+    - [ ] Figure out the semantics for type tracking
+  - [ ] Study dynamic typing
+    - [ ] Figure out the semantics of type representation and manipulation
+    - [ ] Figure out the semantics for type tracking
+  - [ ] Figure out the interfaces between the different type-systems
+  - [ ] Figure out the user-API for this
+    - [ ] How do users specify the type system to use?
+    - [ ] How do users manipulate each type of type?
+    - [ ] How do users make assertions for each type system, and how do those assertions influence compilation?
+    - [ ] How can users extend the above type system for different implementaitons and/or extensions of the above concepts?
+      - It would be best if I could find a way to make this something that can be added on later, to speed up the development of a language prototype.
+  - [ ] Figure out the semantics for interactions bet
   - [ ] Implement the framework for atoms, functions, macros, etc
   - [ ] Implement the framework for types
   - [ ] Implement the framework for universes
