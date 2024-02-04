@@ -62,31 +62,26 @@ Future plans are currently vague, but currently involve the following points:
     - [ ] Figure out how to execute a network of nodes
       - [ ] Figure out reasonably-efficient execution in the DAG context
       - [ ] Figure out how to deal with loops
+      - [ ] Figure out how to reduce code-graphs based on runtime information
+        - Shouldn't compromise other features like traversal or looping
     - [ ] Figure out how macros work in node networks
       - [ ] Figure out how to structure macroexpansion time vs runtime
         - Should I make a distinction and do multiple expansion passes before the execution pass? Integrate macroexpansion into the type propagation pass, maybe?
       - [ ] Figure out if it's possible to ergonomically denote the scope of a macro, and if so how
       - [ ] Figure out how macros interact if their range of influence overlaps
-  - [-] Develop some proofs-of-concept for the usefulness of the node abstraction in normal CL code
-    - [-] Reactive programming
-      - [X] Prototype exists
-      - [ ] Update after the node semantics are tied down
-    - [-] Syntax for making node programs in CL code
-      - [X] Prototype exists
-      - [ ] Update after the node semantics are tied down
-    - [ ] Compiling program dataflow
-      - Possible implementation: implement a simple from-scratch neural network and auto-parallelize and auto-optimize
-  - [ ] Develop a compilation paradigm for networks of nodes
-    - [ ] Figure out how to find patterns in graphs and replace them with more efficient alternatives
-    - [ ] Figure out how to denote compilation behavior of individual nodes in relation to their contexts in a graph
-      - [ ] Figure out what kinds of behavior and relevant aspects might be needed
-        - Cost estimates? How to represent these?
-        - (optional) Probability estimates for code-paths / a subset of possible value-types at a point?
-          - With the right planning algorithms, this would allow things like reasonable auto-optimization of multi-device computations
-      - [ ] Figure out a way to implement compilation and aspect-tracking in an extensible manner
-      - [ ] Figure out how to actually denote the compilation behavior
-      - [ ] Figure out how to deal with different behavior of different nodes/node-classes
-    - [ ] Figure out how to choose between multiple possible compilation directions
+    - [ ] Develop a compilation framework for networks of nodes
+      - [ ] Figure out how to find patterns in graphs and replace them with more efficient alternatives before/outside-of runtime
+        - Preferably this allows both noticing patterns before runtime and just simplifying things based on runtime values...
+          - Would the latter (simplifying code based on runtime values) require the full dependent typing system?
+      - [ ] Figure out how to denote compilation behavior of individual nodes in relation to their contexts in a graph
+        - [ ] Figure out what kinds of behavior and relevant aspects might be needed
+          - Cost estimates? How to represent these?
+          - (optional) Probability estimates for code-paths / a subset of possible value-types at a point?
+            - With the right planning algorithms, this would allow things like reasonable auto-optimization of multi-device computations
+        - [ ] Figure out a way to implement compilation and aspect-tracking in an extensible manner
+        - [ ] Figure out how to actually denote the compilation behavior
+        - [ ] Figure out how to deal with different behavior of different nodes/node-classes
+      - [ ] Figure out how to choose between multiple possible compilation directions
   - [ ] Develop an extensible object/class abstraction for graphs
     - A graph is intended to be a collection of nodes with aggregate behavior.
     - [ ] Figure out how to collect nodes in a graph and refer to a graph's components
@@ -104,15 +99,27 @@ Future plans are currently vague, but currently involve the following points:
         - [ ] How do we do this without sharing the same graph object across instances?
         - [ ] How do we update the included graphs if the original changes?
         - [ ] Compilation
-  - [ ] Develop a way for graph programs to modify themselves, i.e. graph macros
-    - [ ] Figure out the semantics of execution times and graph compilation
-    - [ ] Figure out how to formalize the concept of modifiers on existing nodes/graphs/graph-segments
-    - [ ] Figure out how to formalize the concept of
+    - [ ] Develop a way for graph programs to modify themselves, i.e. graph macros
+      - [ ] Figure out how this differs from just networks of nodes
+      - [ ] Figure out the semantics of execution times and graph compilation
+      - [ ] Figure out how to formalize the concept of modifiers on existing nodes/graphs/graph-segments
+  - [-] Develop some proof-of-concepts for the usefulness of the node abstraction in normal CL code
+    - [-] Reactive programming
+      - [X] Prototype exists
+      - [ ] Update after the node semantics are tied down
+    - [-] Syntax for making node programs in CL code
+      - [X] Prototype exists
+      - [ ] Update after the node semantics are tied down
+    - [ ] Compiling program dataflow
+      - Possible implementation: implement a simple from-scratch neural network and auto-parallelize and auto-optimize
 - [ ] Develop a framework for execution contexts
   - [ ] Tracking the current execution environment as a graph is traversed
     - [ ] Storing the execution environment
     - [ ] Representing computations that read/write to the execution environment
     - [ ] Efficiency
+      - Resources:
+        - [ ] Glicol - A graph-oriented language developed in Rust: https://webaudioconf.com/_data/papers/pdf/2021/2021_8.pdf
+          - Glicol uses a clock to avoid recomputation if the value of something is already known at the current clock time (essentially meaning that none of the dependencies have changed since the last computation). A similar system could be used in Flow, since with both language environment and external environment being first-class objects we have the runtime managing all possible inputs to a node
     - [ ] Figuring out the semantics to denote "universes" in the graph
       - [ ] Syntax for this?
       - [ ] How will this actually work?
@@ -192,6 +199,8 @@ Future plans are currently vague, but currently involve the following points:
       - [ ] Simply Easy - An implementation of a dependently typed lambda calculus: http://strictlypositive.org/Easy.pdf
       - [ ] Defining Types in Shen: https://bluishcoder.co.nz/2019/10/03/defining-types-in-shen.html
         - Shen allows toggling the type system (which presumably involves toggling an environment variable); this format could be usable for controlling the level of contstraint from the type system in Flow
+      - [ ] Shen Logic Lab (a proof assistant system for Shen): https://shenlanguage.org/logiclab.html
+        - This is a proof assistant built inside Shen; depending on the details of the description videos, I might be able to do the same for actually implementing formal verification of Flow programs / program contracts
   - [ ] Figure out the interfaces between the different type-systems
   - [ ] Figure out the user-API for this
     - [ ] How do users specify the type system to use?
