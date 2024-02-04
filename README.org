@@ -53,13 +53,20 @@ Future plans are currently vague, but currently involve the following points:
     - [X] Figure out the basic conceptual structure of the core node class
       - Currently thinking about making this just a directed graph of inputs/outputs with a ~value~ slot for node data/metadata
     - [ ] Implement a decent prototype of the core node class
-    - [ ] Figure out extension points
-    - [ ] Figure out how to define behavior for specific node subclasses
-    - [ ] Figure out how to contain and execute computations in a node
-    - [ ] Figure out how to traverse nodes by their connections
+    - [-] Figure out extension points
+    - [-] Figure out how to define behavior for specific node subclasses
+    - [-] Figure out how to contain and execute computations in a node
+    - [-] Figure out how to traverse nodes by their connections
+      - [X] Implement simple traversals (e.g. BFS, DFS)
+      - [ ] Verify that the traversal API is extensible and allows full expression of the power of the underlying node-network systems
     - [ ] Figure out how to execute a network of nodes
       - [ ] Figure out reasonably-efficient execution in the DAG context
       - [ ] Figure out how to deal with loops
+    - [ ] Figure out how macros work in node networks
+      - [ ] Figure out how to structure macroexpansion time vs runtime
+        - Should I make a distinction and do multiple expansion passes before the execution pass? Integrate macroexpansion into the type propagation pass, maybe?
+      - [ ] Figure out if it's possible to ergonomically denote the scope of a macro, and if so how
+      - [ ] Figure out how macros interact if their range of influence overlaps
   - [-] Develop some proofs-of-concept for the usefulness of the node abstraction in normal CL code
     - [-] Reactive programming
       - [X] Prototype exists
@@ -130,6 +137,10 @@ Future plans are currently vague, but currently involve the following points:
         - [ ] Dealing with external events
           - Examples: filesystem, network, etc
         - [ ] Dealing with interop
+    - [ ] Tracking interactions between environment and runtime code
+      - [ ] Tracking which parts of the environment are affected by specific code
+        - May need to work out the full type system for this...
+        - This falls into tracking the purity of code (all interactions with the environment are read-only)
     - [ ] Moving execution between different places on the graph
       - How do I maintain the execution-context continuations in this case?
       - How do we get unwind-protect like functionality, for cases where
@@ -164,11 +175,23 @@ Future plans are currently vague, but currently involve the following points:
             - Resources:
               - [-] Handling delimited continuations with dependent types: https://dl.acm.org/doi/10.1145/3236764
                 - This talks about splitting into pure and impure cases so that the pure case can allow more in-depth dependent typing. It seems the same approach could be taken with universes, where interactions with a segment of a universe that is a parent of the targeted universe means said targeted universe can only be legally shared and called outside said parent if dependent typing is being forced in this context.
-      - [ ] Figure out how to deal with Girard's Paradox (see https://lean-lang.org/functional_programming_in_lean/functor-applicative-monad/universes.html)
+          - [ ] Figure out how dependent types will interact with macros
+            - Can I just let it loosen instead, save for inlining cases? So you execute macros at compile time, and blocks get compiled when defined rather than at the call site? That way you can always get a full expansion of the code graph by propagating type information through it and expanding macros as you reach a node in their scope; and in inlining cases the inline itself acts as a macro, so you can treat it the same way.
+            - Resources:
+              - Dependent type systems as macros: https://arxiv.org/abs/2107.01295
+                - A macro framework for _implementing_ dependent type systems, rather than a way to use macros within one, but nonetheless useful for implementation reasons and potentially relevant here as well
+      - [ ] Figure out how to deal with Girard's Paradox
+        - Resources:
+          - [-] Functional programming in Lean - Universes: https://lean-lang.org/functional_programming_in_lean/functor-applicative-monad/universes.html
+            - It seems that Lean takes the approach of an implicit infinite regression of universes for these situations (e.g. for the type of ~Type~). Could I implement the universe graph to have implicit transitions, to allow this approach?
       - [ ] Figure out how degree of provability interacts with efficiency and usability
         - [ ] Look at Coq as a potential case-study
         - [ ] Look at Lean as a potential case-study
     - [ ] Figure out how this typing can be done optionally
+    - Resources:
+      - [ ] Simply Easy - An implementation of a dependently typed lambda calculus: http://strictlypositive.org/Easy.pdf
+      - [ ] Defining Types in Shen: https://bluishcoder.co.nz/2019/10/03/defining-types-in-shen.html
+        - Shen allows toggling the type system (which presumably involves toggling an environment variable); this format could be usable for controlling the level of contstraint from the type system in Flow
   - [ ] Figure out the interfaces between the different type-systems
   - [ ] Figure out the user-API for this
     - [ ] How do users specify the type system to use?
@@ -180,9 +203,15 @@ Future plans are currently vague, but currently involve the following points:
   - [ ] Implement the framework for atoms, functions, macros, etc
   - [ ] Implement the framework for types
   - [ ] Implement the framework for universes
-- [ ] Develop the user interface for this language
+- [-] Develop the user interface for this language
   - Needs to be done in tandem with the other steps
-  - [ ] Syntax?
+  - [-] Syntax?
+    - [ ] Look into Lisps
+    - [ ] Look into ML
+    - [-] Look into Ithkuil
+      - https://www.ithkuil.net/
+      - Words have a base to which modifiers and parameters are applied.
+      - Both here and in general in natural language, sentences seem to be the points where you escape local contexts/parentheses and return to the grounding of the current universe
   - [ ] Representation of data/programs?
   - [ ] Restrictions on user behavior and their bypasses?
 - [ ] Implement sample libraries
