@@ -58,6 +58,8 @@ Future plans are currently vague, but currently involve the following points:
     - [ ] Figure out how to contain and execute computations in a node
     - [ ] Figure out how to traverse nodes by their connections
     - [ ] Figure out how to execute a network of nodes
+      - [ ] Figure out reasonably-efficient execution in the DAG context
+      - [ ] Figure out how to deal with loops
   - [-] Develop some proofs-of-concept for the usefulness of the node abstraction in normal CL code
     - [-] Reactive programming
       - [X] Prototype exists
@@ -106,12 +108,17 @@ Future plans are currently vague, but currently involve the following points:
       - [ ] How will this actually work?
         - Look at Lean and similar languages for inspiration here?
     - [ ] Inheritance between environments
+      - [ ] Figure out limits on which universes can inherit from which others
+        - E.g. based on position in the graph
       - [ ] Dealing with inherited values and their updates
       - [ ] Dealing with access syntax/semantics
       - [ ] Multiple inheritance
         - Most likely this will end up creating a DAG of environments
       - [ ] Representing the outside world (i.e. the host language and external environment) in the universe context
-        - Likely will be the parent of everything else, with the Flow runtime creating a child universe for itself from which other universes can inherit
+        - Likely will be the parent of the runtime's other universes, with the Flow runtime creating a child universe for itself from which all other universes can inherit
+        - [ ] Dealing with external events
+          - Examples: filesystem, network, etc
+        - [ ] Dealing with interop
     - [ ] Moving execution between different places on the graph
       - How do I maintain the execution-context continuations in this case?
       - How do we get unwind-protect like functionality, for cases where
@@ -143,6 +150,18 @@ Future plans are currently vague, but currently involve the following points:
   - [ ] Syntax?
   - [ ] Representation of data/programs?
   - [ ] Restrictions on user behavior and their bypasses?
+- [ ] Implement sample libraries
+  - Goals:
+    - Demonstrate how to write pure Flow code
+    - Demonstrate how to write external code and near-seamlessly interop with it
+  - [ ] Interop with pure CL
+  - [ ] Efficient arithmetic / linear algebra
+  - [ ] Pure-Flow Machine learning framework
+  - [ ] Library for interop with an external Python process through the REPL and filesystem
+- [ ] Narrow down a core kernel for better compatibility
+  - [ ] Move as much functionality as possible into the language syntax itself
+  - [ ] Operationalize the semantics for functionality that can't be bootstrapped
+  - [ ] Make a sample implementation in another language
 
 - Complete the lazy programming sub-framework?
   - This may not be worth it, compared to just starting anew
