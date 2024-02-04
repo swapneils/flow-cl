@@ -47,14 +47,23 @@ Place this repository somewhere ASDF or Quicklisp can find it as a local project
 ** Progress and Roadmap
 
 Future plans are currently vague, but currently involve the following points:
-- [ ] Develop a prototype for node/graph computation
-  - [ ] Develop an extensible node abstraction
-    - Currently thinking about making this just a directed graph of inputs/outputs, maybe with setf advice to track a combined set of both
-    - [ ] Figure out how to contain computations in a node
-    - [ ] Figure out how to execute a node
+- [-] Develop a prototype for node/graph computation
+  - [-] Develop an extensible node abstraction
+    - [X] Figure out the basic conceptual structure of the core node class
+      - Currently thinking about making this just a directed graph of inputs/outputs with a ~value~ slot for node data/metadata
+    - [ ] Implement a decent prototype of the core node class
+    - [ ] Figure out extension points
+    - [ ] Figure out how to define behavior for specific node subclasses
+    - [ ] Figure out how to contain and execute computations in a node
     - [ ] Figure out how to traverse nodes by their connections
-    - [ ] Figure out how to define behavior for specific subclasses
-  - [ ] Develop some proofs-of-concept for the usefulness of the node abstraction in normal CL code
+    - [ ] Figure out how to execute a network of nodes
+  - [-] Develop some proofs-of-concept for the usefulness of the node abstraction in normal CL code
+    - [-] Reactive programming
+      - [X] Prototype exists
+      - [ ] Update after the node semantics are tied down
+    - [-] Syntax for making node programs in CL code
+      - [X] Prototype exists
+      - [ ] Update after the node semantics are tied down
   - [ ] Develop a compilation paradigm for networks of nodes
     - [ ] Figure out how to find patterns in graphs and replace them with more efficient alternatives
     - [ ] Figure out how to denote compilation behavior of individual nodes in relation to their contexts in a graph
