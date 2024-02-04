@@ -65,6 +65,8 @@ Future plans are currently vague, but currently involve the following points:
     - [-] Syntax for making node programs in CL code
       - [X] Prototype exists
       - [ ] Update after the node semantics are tied down
+    - [ ] Compiling program dataflow
+      - Possible implementation: implement a simple from-scratch neural network and auto-parallelize and auto-optimize
   - [ ] Develop a compilation paradigm for networks of nodes
     - [ ] Figure out how to find patterns in graphs and replace them with more efficient alternatives
     - [ ] Figure out how to denote compilation behavior of individual nodes in relation to their contexts in a graph
