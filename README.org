@@ -73,6 +73,9 @@ Future plans are currently vague, but currently involve the following points:
     - [ ] Figure out how to find patterns in graphs and replace them with more efficient alternatives
     - [ ] Figure out how to denote compilation behavior of individual nodes in relation to their contexts in a graph
       - [ ] Figure out what kinds of behavior and relevant aspects might be needed
+        - Cost estimates? How to represent these?
+        - (optional) Probability estimates for code-paths / a subset of possible value-types at a point?
+          - With the right planning algorithms, this would allow things like reasonable auto-optimization of multi-device computations
       - [ ] Figure out a way to implement compilation and aspect-tracking in an extensible manner
       - [ ] Figure out how to actually denote the compilation behavior
       - [ ] Figure out how to deal with different behavior of different nodes/node-classes
@@ -106,7 +109,15 @@ Future plans are currently vague, but currently involve the following points:
     - [ ] Figuring out the semantics to denote "universes" in the graph
       - [ ] Syntax for this?
       - [ ] How will this actually work?
-        - Look at Lean and similar languages for inspiration here?
+        - [ ] Look at Lean and similar languages for inspiration here?
+        - [ ] Look at delimited continuations?
+          - These seem to be implementable as the special-case where a universe is a copy of its entire parental context
+          - Resources:
+            - [-] Handling delimited continuations with dependent types: https://dl.acm.org/doi/10.1145/3236764
+        - [ ] Look at natural language?
+          - Resources:
+            - [ ] Context-linked grammar: https://www.sciencedirect.com/science/article/abs/pii/S0388000114000515
+        - [ ] Look to see if anything as broad as what I'm imagining already exists
     - [ ] Inheritance between environments
       - [ ] Figure out limits on which universes can inherit from which others
         - E.g. based on position in the graph
@@ -125,15 +136,39 @@ Future plans are currently vague, but currently involve the following points:
   - [ ] Parallel execution of graphs
     - This would need to be worked out along with the execution contexts, to avoid the latter obstructing the former and requiring hacky workarounds.
 - [ ] Develop an optional dependent typing framework for graphs
-  - [ ] Study dependent typing and proof-based languages
-    - [ ] Figure out the semantics of type representation and manipulation
-    - [ ] Figure out the semantics for type tracking
-  - [ ] Study HM typing
-    - [ ] Figure out the semantics of type representation and manipulation
-    - [ ] Figure out the semantics for type tracking
   - [ ] Study dynamic typing
     - [ ] Figure out the semantics of type representation and manipulation
     - [ ] Figure out the semantics for type tracking
+      - [ ] Figure out how these types will behave and be organized
+        - [ ] Figure out the basics of how this variant of types work
+        - [ ] Figure out how types will interact with the other language features
+    - [ ] Figure out if I can get away with just making other types warn unless required by the programmer, and make the entire system dynamic with warnings that way
+      - Resources:
+        - [ ] Dynamic Typing with Dependent Types: https://www.cs.princeton.edu/~dpw/papers/DTDT-tr.pdf
+  - [ ] Study HM typing
+    - [ ] Figure out the semantics of type representation and manipulation
+    - [ ] Figure out the semantics for type tracking
+      - [ ] Figure out how these types will behave and be organized
+        - [ ] Figure out the basics of how this variant of types work
+          - [ ] Look at Haskell as a potential case-study
+        - [ ] Figure out how types will interact with the other language features
+    - [ ] Figure out how this typing can be done optionally
+    - [ ] Figure out if we need this or can skip directly to fully-provable types
+  - [ ] Study dependent typing and proof-based languages
+    - [ ] Figure out the semantics of type representation and manipulation
+    - [ ] Figure out the semantics for type tracking
+      - [ ] Figure out how these types will behave and be organized
+        - [ ] Figure out the basics of how this variant of types work
+        - [ ] Figure out how types will interact with the other language features
+          - [ ] Figure out how dependent types will interact with unvierses
+            - Resources:
+              - [-] Handling delimited continuations with dependent types: https://dl.acm.org/doi/10.1145/3236764
+                - This talks about splitting into pure and impure cases so that the pure case can allow more in-depth dependent typing. It seems the same approach could be taken with universes, where interactions with a segment of a universe that is a parent of the targeted universe means said targeted universe can only be legally shared and called outside said parent if dependent typing is being forced in this context.
+      - [ ] Figure out how to deal with Girard's Paradox (see https://lean-lang.org/functional_programming_in_lean/functor-applicative-monad/universes.html)
+      - [ ] Figure out how degree of provability interacts with efficiency and usability
+        - [ ] Look at Coq as a potential case-study
+        - [ ] Look at Lean as a potential case-study
+    - [ ] Figure out how this typing can be done optionally
   - [ ] Figure out the interfaces between the different type-systems
   - [ ] Figure out the user-API for this
     - [ ] How do users specify the type system to use?
