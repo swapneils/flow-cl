@@ -7,7 +7,8 @@ A graph-oriented, optionally-typed, optionally-verifiable language built over Co
 The Flow language is a long-term project on my part, attempting to extend Common Lisp (and hopefully other runtimes in the future) with the ability to interactively build programs around the flow of information.
 
 There are a few core concepts which guide the design and implementation of Flow:
-- Graph-oriented: Flow is intended to
+- Graph-oriented: Flow is intended to [TBC]
+- ...
 
 FlowCL is intended to integrate with its host languages, allowing integration into existing codebases.
 
@@ -126,8 +127,8 @@ Future plans are currently vague, but currently involve the following points:
   - [ ] Restrictions on user behavior and their bypasses?
 
 - Complete the lazy programming sub-framework?
-  This may not be worth it, compared to just starting anew
-  This may be better served in a separate library rather than as a part of the FlowCL implementation.
+  - This may not be worth it, compared to just starting anew
+  - This may be better served in a separate library rather than as a part of the FlowCL implementation.
 
   - Improving the efficiency.
 
