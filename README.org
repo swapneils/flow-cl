@@ -173,6 +173,10 @@ Future plans are currently vague, but currently involve the following points:
     - [ ] Figure out how this typing can be done optionally
     - [ ] Figure out if we need this or can skip directly to fully-provable types
   - [ ] Study dependent typing and proof-based languages
+    - [ ] Look into Refinement typing
+      - Resources:
+        - [-] Refinement types - A Tutorial: https://arxiv.org/abs/2010.07763
+          - This paper is *extremely* useful, and provides a series of steps from simple typing to a full refinement type system, which (judging from the abstract) allows optional program verification. This might be what I want re: types in Flow
     - [ ] Figure out the semantics of type representation and manipulation
     - [ ] Figure out the semantics for type tracking
       - [ ] Figure out how these types will behave and be organized
