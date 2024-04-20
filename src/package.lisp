@@ -74,6 +74,12 @@
   (:local-nicknames
    (:sera :serapeum)))
 
+(defpackage :flow-cl.propagate-test
+  (:use :common-lisp :alexandria :iterate
+   :flow-cl.util :flow-cl.graph)
+  (:local-nicknames
+   (:sera :serapeum)))
+
 (defpackage :flow-cl
   (:use :common-lisp :alexandria :iterate)
   (:local-nicknames
