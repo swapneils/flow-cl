@@ -61,7 +61,15 @@ Future plans are currently vague, but currently involve the following points:
       - [ ] Verify that the traversal API is extensible and allows full expression of the power of the underlying node-network systems
     - [ ] Figure out how to execute a network of nodes
       - [ ] Figure out reasonably-efficient execution in the DAG context
+        - [ ] Figure out how to deal with parallel execution
+          - Maybe mark nodes based on which "parallel stream" they're assigned to, and only allow pure nodes to have multiple streams? Streams themselves could have lists of start and end nodes, and fulfilling all the start nodes would start stream execution while progressively signaling outputs from particular sub-nodes in the stream to queue into the output nodes of that stream. Non-pure nodes would always have stream 0, which either halts at a stream-0 node when non-zero streams are running with that node as an output (how does this deal with intentional parallelization, where you *want* the pure streams to have outputs interleaved with the impure streams?) (I suppose if each parallel execution line had its own set of streams, then there would only be one execution line which actually executed impure nodes, so outputs of a stream could just be queued into stream 0 in the order that they were outputted to? That might make race conditions between streams though. Maybe store the outputs as outputs of a stream and just compress the dataflow graph for that transition into the stream nodes? Anyway, there shouldn't really be duplicate calls to the same impure node (or the same node at all) unless done in a loop, which severely restricts the cases where we would be running multiple streams at once anyway...) or simply allows interleaving inputs from streams with inputs from the base thread (this doesn't feel like safe-by-default semantics for parallel execution...).
       - [ ] Figure out how to deal with loops
+        - Can I just make loops and tail-calls equivalent to each other? This would section off the code inside a loop from being optimized together with the code outside it, which is a performance loss, but makes the compilation process significantly simpler.
+          - For instance, it means that a single-threaded execution can be relied upon to not visit the same node twice except when going through a loop, which means I can compress sections of pure nodes into streams fearlessly without losing accuracy.
+          - This would mean that you can't create universes in earlier versions of a loop and then refer back to them later, I think? Or maybe I should allow a function to do this, though the universe would persist across tail-calls in that case, which might lead to a stack overflow on the universe stack even if we have tail-call elimination for loops themselves.
+            - Since universes can be manipulated, there's a simple workaround of just merging the loop universe with the one above it, which could be implemented as a simple macro over the loop form itself. This may impede type inference, however; I suppose the fact that a single iteration of the loop (/ function) could be analyzed without interference from this makes that simpler, but if future iterations depend on things defined in past iterations, either we get an infinite loop of types or we cut inference short somehow and end up with a limited conception of the loop's output type.
+        - I suppose I could just leave compilation of loops as an implementation detail, so future implementors may or may not find case-specific ways to work through this to get context-aware compilation of a loop.
+          - Tail-call elimination should be taken as a default, of course, though I suppose it already is
       - [ ] Figure out how to reduce code-graphs based on runtime information
         - Shouldn't compromise other features like traversal or looping
     - [ ] Figure out how macros work in node networks
@@ -82,6 +90,13 @@ Future plans are currently vague, but currently involve the following points:
         - [ ] Figure out how to actually denote the compilation behavior
         - [ ] Figure out how to deal with different behavior of different nodes/node-classes
       - [ ] Figure out how to choose between multiple possible compilation directions
+      - Resources:
+        - [ ] Stream Fusion, to completeness: https://arxiv.org/abs/1612.06668
+          - Establishes a framework for optimizing stream-based code to match or exceed hand-optimized performance.
+          - Definitely something I want to look at to see where I can use it. Even if the type system ends up interfering with stream fusions this could be implemented locally in sub-graphs where type inference has been fully completed.
+        - [ ] Handling non-reducible flow graphs: http://www.faadooengineers.com/online-study/post/cse/compiler-design/227/handling-non-reducible-flow-graphs
+          - A very short article (2-3 paragraphs) roughly outlining how duplicating parts of the flow graph allows you to find dominators in otherwise non-reducible graphs.
+          - I feel like we could further narrow down where we might need to do these duplications given the syntax of Flow (e.g. only at universe-defining points, since those are the only ones you can arbitrarily transport evaluation to), but I'm not sure
   - [ ] Develop an extensible object/class abstraction for graphs
     - A graph is intended to be a collection of nodes with aggregate behavior.
     - [ ] Figure out how to collect nodes in a graph and refer to a graph's components
@@ -110,6 +125,30 @@ Future plans are currently vague, but currently involve the following points:
     - [-] Syntax for making node programs in CL code
       - [X] Prototype exists
       - [ ] Update after the node semantics are tied down
+        - If we made markers in the call graph (e.g. with ~@~ as a fundamental reader-macro for traversal to different points in the unevaluated computation graph) we could use a reader stack for linearly reading terms as nodes, and merge them into the graph when the node's specifications are fulfilled
+          - How would we determine nodes (and node properties) from names? We can't know the argument count of a function without the function already being defined, but that requires processing the function definition form
+            - _Instead of having a reader stack_, maybe rely on the execution passes for stack functionality instead? Each item is read based on reader macros (i.e. numbers, strings, symbols) and starts out with exactly 1 input (the environment from the preceding node) and exactly 1 output, unless we use ~@~ references to link multiple nodes into/out-of a node. The order of the creation of the input/output links could determine the order of the corresponding input/output execution paths/agents (e.g. an ~if~ would have the first output-node created in the read pass be true and the second be false). Function application would work like in Haskell, where in theory every function has one input (plus the environment input, in our case) but multi-argument functions generate temporary functions to read the rest of the inputs (which could in theory be optimized away for better parallelization via compiler macros during execution).
+              - What do multiple input paths mean???
+              - _Instead of having 1 input and 1 output_, maybe put the inputs before the node itself, just add an additional first argument for the environment, and add a reader macro for collections of inputs with decent semantics for linking things from other places?
+                - Note: presumably we're allowing renaming of positions, since the read process should be linear. So we could literally name arguments things like ~@1~, ~@2~, etc if we wanted, and then rename them as needed.
+                - Note: How would this work with macros like apply? Should function argument lists be allowed to request a certain number of input nodes (which won't be given the output of this node as an input) going after them in a linear sequence, bringing back some of the above Haskell-like semantics?
+                  - Function argument lists would then include both a before-list (which are all linked in parallel) and an after list (which are structurally positioned as a line after the current node (presumably in terms of semantics they'll be indistinguishable from the before-list, evaluating in parallel after which we evaluate the node itself)). In cases of macroexpansion the inputs and outputs of the macro node (assuming none of them are at the same execution level as the macro node itself) would be atomic, and so considered to be evaluated.
+              - Might still need a reader stack to implement things like backwards arrows (for convenience / syntax-sugar reasons)
+          - How would we enclose sets of nodes in the read context?
+            - Make syntax sugar for parentheses to become start/end nodes, and then during execution interpret these as enclosing atomic objects for the purposes of forms like ~if~?
+          - We'd want to track a jump stack
+          - We'd want to define and track named positions
+          - How would we determine which node should be pushed to the stack / named-position?
+            - Last node added?
+              - How does this interact with arguments?
+                - Do we just not add argument nodes in until they're resolved in the reader stack as part of a call of some sort?
+          - Would we store the reader stack along with the node position, and update them both on traversal?
+            - Feels like this would interfere with linking different regions together...
+          - How would we traverse the universe stack in this case?
+            - This should be an in-code traversal, to be honest, as opposed to the reader traversal being described in the grandparent. Maybe do it through a fundamental function for moving the execution context that reaches it to a place specified by its input, similarly to how the grandparent defines a fundamental function for moving the reader context?
+              - Said function would have to either have no outputs, ignore its outputs, or have some approach to an execution jump stack which allows returning values when you jump back to somewhere and also forgives cases where you /don't/ jump back (e.g. we don't want to block the execution context on that particular node outputting something).
+      - Resources:
+        - [ ] Claro programming language: https://www.reddit.com/r/ProgrammingLanguages/comments/1b1tqat/the_claro_programming_language/
     - [ ] Compiling program dataflow
       - Possible implementation: implement a simple from-scratch neural network and auto-parallelize and auto-optimize
 - [ ] Develop a framework for execution contexts
@@ -118,41 +157,48 @@ Future plans are currently vague, but currently involve the following points:
     - [ ] Representing computations that read/write to the execution environment
     - [ ] Efficiency
       - Resources:
-        - [ ] Glicol - A graph-oriented language developed in Rust: https://webaudioconf.com/_data/papers/pdf/2021/2021_8.pdf
-          - Glicol uses a clock to avoid recomputation if the value of something is already known at the current clock time (essentially meaning that none of the dependencies have changed since the last computation). A similar system could be used in Flow, since with both language environment and external environment being first-class objects we have the runtime managing all possible inputs to a node
-    - [ ] Figuring out the semantics to denote "universes" in the graph
-      - [ ] Syntax for this?
-      - [ ] How will this actually work?
-        - [ ] Look at Lean and similar languages for inspiration here?
-        - [ ] Look at delimited continuations?
-          - These seem to be implementable as the special-case where a universe is a copy of its entire parental context
-          - Resources:
-            - [-] Handling delimited continuations with dependent types: https://dl.acm.org/doi/10.1145/3236764
-        - [ ] Look at natural language?
-          - Resources:
-            - [ ] Context-linked grammar: https://www.sciencedirect.com/science/article/abs/pii/S0388000114000515
-        - [ ] Look to see if anything as broad as what I'm imagining already exists
-    - [ ] Inheritance between environments
-      - [ ] Figure out limits on which universes can inherit from which others
-        - E.g. based on position in the graph
-      - [ ] Dealing with inherited values and their updates
-      - [ ] Dealing with access syntax/semantics
-      - [ ] Multiple inheritance
-        - Most likely this will end up creating a DAG of environments
-      - [ ] Representing the outside world (i.e. the host language and external environment) in the universe context
-        - Likely will be the parent of the runtime's other universes, with the Flow runtime creating a child universe for itself from which all other universes can inherit
-        - [ ] Dealing with external events
-          - Examples: filesystem, network, etc
-        - [ ] Dealing with interop
-    - [ ] Tracking interactions between environment and runtime code
-      - [ ] Tracking which parts of the environment are affected by specific code
-        - May need to work out the full type system for this...
-        - This falls into tracking the purity of code (all interactions with the environment are read-only)
-    - [ ] Moving execution between different places on the graph
-      - How do I maintain the execution-context continuations in this case?
-      - How do we get unwind-protect like functionality, for cases where
-  - [ ] Parallel execution of graphs
-    - This would need to be worked out along with the execution contexts, to avoid the latter obstructing the former and requiring hacky workarounds.
+        - [ ] Sources/inspiration/etc for embedding reactivity into an interpreter?: https://www.reddit.com/r/ProgrammingLanguages/comments/1b0mkdt/sourcesinspirationetc_for_embedding_reactivity/
+          - Answers have some useful links;
+            - Interactive FUnctional Programming seems particularly useful as a cross-platform optimization measure, even if I end up having to limit it to pure functions instead of the full code.
+              - Should this be by compiler discretion, caching some values for common code paths and using those for adaptation (basically machine learning for performance)? Or should the user define where this optimization is applied?
+                - Among other considerations, the former gives implementors more flexibility
+                - Among other considerations, the latter allows the functionality to be added in the generalized language spec
+- [ ] A simple interprocedural register allocation algorithm and its effectiveness for LISP: https://dl.acm.org/doi/pdf/10.1145/59287.59289
+  - [ ] Glicol - A graph-oriented language developed in Rust: https://webaudioconf.com/_data/papers/pdf/2021/2021_8.pdf
+    - Glicol uses a clock to avoid recomputation if the value of something is already known at the current clock time (essentially meaning that none of the dependencies have changed since the last computation). A similar system could be used in Flow, since with both language environment and external environment being first-class objects we have the runtime managing all possible inputs to a node
+- [ ] Figuring out the semantics to denote "universes" in the graph
+  - [ ] Syntax for this?
+  - [ ] How will this actually work?
+    - [ ] Look at Lean and similar languages for inspiration here?
+    - [ ] Look at delimited continuations?
+      - These seem to be implementable as the special-case where a universe is a copy of its entire parental context
+      - Resources:
+        - [-] Handling delimited continuations with dependent types: https://dl.acm.org/doi/10.1145/3236764
+    - [ ] Look at natural language?
+      - Resources:
+        - [ ] Context-linked grammar: https://www.sciencedirect.com/science/article/abs/pii/S0388000114000515
+    - [ ] Look to see if anything as broad as what I'm imagining already exists
+- [ ] Inheritance between environments
+  - [ ] Figure out limits on which universes can inherit from which others
+    - E.g. based on position in the graph
+  - [ ] Dealing with inherited values and their updates
+  - [ ] Dealing with access syntax/semantics
+  - [ ] Multiple inheritance
+    - Most likely this will end up creating a DAG of environments
+  - [ ] Representing the outside world (i.e. the host language and external environment) in the universe context
+    - Likely will be the parent of the runtime's other universes, with the Flow runtime creating a child universe for itself from which all other universes can inherit
+    - [ ] Dealing with external events
+      - Examples: filesystem, network, etc
+    - [ ] Dealing with interop
+- [ ] Tracking interactions between environment and runtime code
+  - [ ] Tracking which parts of the environment are affected by specific code
+    - May need to work out the full type system for this...
+    - This falls into tracking the purity of code (all interactions with the environment are read-only)
+- [ ] Moving execution between different places on the graph
+  - How do I maintain the execution-context continuations in this case?
+  - How do we get unwind-protect like functionality, for cases where
+- [ ] Parallel execution of graphs
+  - This would need to be worked out along with the execution contexts, to avoid the latter obstructing the former and requiring hacky workarounds.
 - [ ] Develop an optional dependent typing framework for graphs
   - [ ] Study dynamic typing
     - [ ] Figure out the semantics of type representation and manipulation
@@ -177,7 +223,9 @@ Future plans are currently vague, but currently involve the following points:
       - Resources:
         - [-] Refinement types - A Tutorial: https://arxiv.org/abs/2010.07763
           - This paper is *extremely* useful, and provides a series of steps from simple typing to a full refinement type system, which (judging from the abstract) allows optional program verification. This might be what I want re: types in Flow
+        - [-] Reddit discussion on dependent types and refinement types: https://www.reddit.com/r/ProgrammingLanguages/comments/jtwyxu/dependent_type_systems/
     - [ ] Figure out the semantics of type representation and manipulation
+      - RE
     - [ ] Figure out the semantics for type tracking
       - [ ] Figure out how these types will behave and be organized
         - [ ] Figure out the basics of how this variant of types work
@@ -189,8 +237,9 @@ Future plans are currently vague, but currently involve the following points:
           - [ ] Figure out how dependent types will interact with macros
             - Can I just let it loosen instead, save for inlining cases? So you execute macros at compile time, and blocks get compiled when defined rather than at the call site? That way you can always get a full expansion of the code graph by propagating type information through it and expanding macros as you reach a node in their scope; and in inlining cases the inline itself acts as a macro, so you can treat it the same way.
             - Resources:
-              - Dependent type systems as macros: https://arxiv.org/abs/2107.01295
-                - A macro framework for _implementing_ dependent type systems, rather than a way to use macros within one, but nonetheless useful for implementation reasons and potentially relevant here as well
+              - [ ] Type systems as macros: https://www.khoury.northeastern.edu/home/stchang/pubs/ckg-popl2017.pdf
+              - [ ] Dependent type systems as macros: https://arxiv.org/abs/2107.01295
+                - A macro framework for _implementing_ dependent type systems in Racket, rather than a way to use macros within one, but nonetheless useful for implementation reasons and potentially relevant here as well
       - [ ] Figure out how to deal with Girard's Paradox
         - Resources:
           - [-] Functional programming in Lean - Universes: https://lean-lang.org/functional_programming_in_lean/functor-applicative-monad/universes.html
@@ -200,11 +249,19 @@ Future plans are currently vague, but currently involve the following points:
         - [ ] Look at Lean as a potential case-study
     - [ ] Figure out how this typing can be done optionally
     - Resources:
+      - [ ] Discussing "Computational types from a logical perspective": https://www.reddit.com/r/ProgrammingLanguages/comments/1b15v04/discussing_computational_types_from_a_logical/
+      - [ ] Implementing Calculus of Constructions in 120 lines of code: https://gist.github.com/Hirrolot/89c60f821270059a09c14b940b454fd6
+        - Related reddit discussion: https://www.reddit.com/r/ProgrammingLanguages/comments/wpvxbn/barebones_lambda_cube_in_ocaml/
+      - [ ] Why is Calculus of Constructions not used more often?: https://www.reddit.com/r/ProgrammingLanguages/s/dDHGLohcGg
+      - [-] Implementing dependent types in 80 lines of code: https://www.reddit.com/r/dependent_types/comments/11bo2rr/how_to_implement_dependent_types_in_80_lines_of/
+      - [ ] A graph-based core for a dependently-typed language: https://gist.github.com/brendanzab/63c2d42c41c95922c0ee98e6e7a10cbb
       - [ ] Simply Easy - An implementation of a dependently typed lambda calculus: http://strictlypositive.org/Easy.pdf
+      - [ ] ACL2 tutorial: https://www.khoury.northeastern.edu/~pete/acl2-cade-tutorial.html
       - [ ] Defining Types in Shen: https://bluishcoder.co.nz/2019/10/03/defining-types-in-shen.html
         - Shen allows toggling the type system (which presumably involves toggling an environment variable); this format could be usable for controlling the level of contstraint from the type system in Flow
       - [ ] Shen Logic Lab (a proof assistant system for Shen): https://shenlanguage.org/logiclab.html
         - This is a proof assistant built inside Shen; depending on the details of the description videos, I might be able to do the same for actually implementing formal verification of Flow programs / program contracts
+      - [ ] Google Groups comment on Qi/Shen dependent types and extending the type-checker: https://groups.google.com/g/Qilang/c/EkdF25yRrNM/m/sOuRYN2s85IJ
   - [ ] Figure out the interfaces between the different type-systems
   - [ ] Figure out the user-API for this
     - [ ] How do users specify the type system to use?
@@ -213,9 +270,14 @@ Future plans are currently vague, but currently involve the following points:
     - [ ] How can users extend the above type system for different implementaitons and/or extensions of the above concepts?
       - It would be best if I could find a way to make this something that can be added on later, to speed up the development of a language prototype.
   - [ ] Figure out the semantics for interactions bet
-  - [ ] Implement the framework for atoms, functions, macros, etc
-  - [ ] Implement the framework for types
-  - [ ] Implement the framework for universes
+  - [ ] Implement the type system
+    - [ ] Implement the framework for atoms, functions, macros, etc
+    - [ ] Implement the framework for types
+    - [ ] Implement the framework for universes
+    - Resources:
+      - [ ] Bidirectional Typing: https://arxiv.org/abs/1908.05839
+        - Seems to be a 2019 literature review on methods of implementing bidirectional typing (i.e. both annotations and inference are used to determine types)
+      - [ ] Checking Dependent Types with Normalization by Evaluation - A Tutorial: https://davidchristiansen.dk/tutorials/nbe/
 - [-] Develop the user interface for this language
   - Needs to be done in tandem with the other steps
   - [-] Syntax?
