@@ -37,17 +37,7 @@
    (values base-output *layer-outputs*)))
 
 (defmethod initialize-instance :after ((f lfunction) &key &allow-other-keys)
-  (c2mop:set-funcallable-instance-function f (lambda (&rest args) (lfuncall f args)))
-
-  (macrolet ((setf-slots (instance &rest pairs)
-               `(setf ,@(iter (for (slot val) on pairs by #'cddr)
-                          (collect `(slot-value ,instance ',slot))
-                          (collect val)))))
-    ;; (setf-slots f
-    ;;             %func func
-    ;;             %layers layers
-    ;;             %layer-deps layer-deps)
-    ))
+  (c2mop:set-funcallable-instance-function f (lambda (&rest args) (lfuncall f args))))
 
 (defun test ()
   (print (funcall (make-instance 'lfunction)))
