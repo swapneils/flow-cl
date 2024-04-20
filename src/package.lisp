@@ -61,8 +61,18 @@
            traverse bfs
            execute calculate propagate
            derivative backprop-deriv simple-gradient-train
-           graph
+           draw-network
            ))
+
+(defpackage :flow-cl.graph
+  (:use :common-lisp :alexandria :iterate :flow-cl.util)
+  (:extends :flow-cl.node))
+
+(defpackage :flow-cl.reader
+  (:use :common-lisp :alexandria :iterate
+   :flow-cl.util :flow-cl.graph)
+  (:local-nicknames
+   (:sera :serapeum)))
 
 (defpackage :flow-cl
   (:use :common-lisp :alexandria :iterate)
@@ -71,5 +81,5 @@
   (:extends :flow-cl.util)
   (:extends :flow-cl.lazy)
   (:extends :flow-cl.plazy)
-  (:extends :flow-cl.node))
+  (:extends :flow-cl.graph))
 ;;; TODO: Remove iterate dependency?

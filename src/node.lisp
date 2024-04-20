@@ -65,7 +65,7 @@
                          map-func
                          push-func pop-func))))
 (defun traverse (start next-func &key map push-func pop-func)
-  "Traverse a graph structure.
+  "Traverse a network structure.
 START is the initial item
 NEXT-FUNC takes the current item and generates a list of items to traverse later.
 MAP, if provided, is a single-argument function run on every item traversed.
@@ -104,13 +104,13 @@ The hash-table's keys are the output of KEY on each of the visited graph nodes."
                       :pop-func pop-func)
             seen)))
 (defun bfs (start next-func &key map (test 'eql) (key #'identity))
-  "Traverse a graph structure with BFS. Wraps `traverse-unseen'."
+  "Traverse a network structure with BFS. Wraps `traverse-unseen'."
   (traverse-unseen start next-func
                    :map map
                    :test test
                    :key key))
 (defun dfs (start next-func &key map (test 'eql) (key #'identity))
-  "Traverse a graph structure with DFS. Wraps `traverse-unseen'."
+  "Traverse a network structure with DFS. Wraps `traverse-unseen'."
   (let ((stack nil))
     (traverse-unseen start next-func
                      :map map
@@ -119,8 +119,8 @@ The hash-table's keys are the output of KEY on each of the visited graph nodes."
                      :push-func (lambda (x) (push x stack))
                      :pop-func (lambda () (pop stack)))))
 
-(defmethod draw-graph ((n node) &key format (shape :rectangle) file)
-  "Takes a node in a graph and draws the entire graph"
+(defmethod draw-network ((n node) &key format (shape :rectangle) file)
+  "Takes a node and draws its connected component."
   (let (nodelist
         edgelist
         (format (or format
@@ -356,28 +356,28 @@ The hash-table's keys are the output of KEY on each of the visited graph nodes."
     (print "backprop")
     (time (backprop-deriv b))
     (print "draw")
-    (time (draw-graph b
-                      :format (lambda (node)
-                                (format nil "~A (~A) (grad ~A)"
-                                        (:label node)
-                                        (:value node)
-                                        (gethash b (:grad node) 0)))))
+    (time (draw-network b
+                        :format (lambda (node)
+                                  (format nil "~A (~A) (grad ~A)"
+                                          (:label node)
+                                          (:value node)
+                                          (gethash b (:grad node) 0)))))
     (print "train")
     (time (simple-gradient-train (list a b) #'identity))
     (print "calc2")
     (time (calculate b t))
     (print "draw2")
-    (time (draw-graph b
-                      :format (lambda (node)
-                                (format nil "~A (~A) (grad ~A)"
-                                        (:label node)
-                                        (:value node)
-                                        (funcall (sera:juxt (lambda (%)
-                                                              (gethash a % 0))
-                                                            (lambda (%)
-                                                              (gethash b % 0)))
-                                                 (:grad node))))
-                      :file "digraph2.png"))))
+    (time (draw-network b
+                        :format (lambda (node)
+                                  (format nil "~A (~A) (grad ~A)"
+                                          (:label node)
+                                          (:value node)
+                                          (funcall (sera:juxt (lambda (%)
+                                                                (gethash a % 0))
+                                                              (lambda (%)
+                                                                (gethash b % 0)))
+                                                   (:grad node))))
+                        :file "digraph2.png"))))
 
 
 (defclass gradient-node (node)
@@ -554,7 +554,7 @@ and output a list of values corresponding to each of the output nodes."
      (for loss in losses)
      (update-func out (- loss)))))
 
-(defclass graph ()
+(defclass test-graph ()
   ((inputs :initform nil
            :accessor :inputs
            :initarg :inputs)
@@ -562,29 +562,29 @@ and output a list of values corresponding to each of the output nodes."
        :accessor :outputs
        :initarg :outputs)))
 
-(defclass compile-graph (graph)
+(defclass test-compile-graph (test-graph)
   ((compiled-inputs :initform nil
                     :accessor :compiled-inputs)
    (compiled-outputs :initform nil
                      :accessor :compiled-outputs)))
 
-(defclass node-graph (compile-graph)
+(defclass node-graph (test-compile-graph)
   ((nodes :initform nil
           :accessor :nodes
           :initarg :nodes)))
 
 (defparameter *graph* nil
-  "A parameter tracking whether we are currently within a graph computation.")
+  "A parameter tracking whether we are currently within a test-graph computation.")
 
 ;;; These are nodes which take their inputs and outputs and modify them.
-;;; Effects might propagate to other nodes, but this functionality is not fully supported outside a graph context
+;;; Effects might propagate to other nodes, but this functionality is not fully supported outside a test-graph context
 (defclass macro-node (node) ())
 
 (defmethod execute ((n macro-node))
   (let* ((inps (:inputs n))
          (outs (:outputs n)))
-    ;; Copy the nodes when not in a graph computation (to encapsulate effects)
-    ;; NOTE: This may cause some macros to be useless outside a graph context. Not sure how to fix this
+    ;; Copy the nodes when not in a test-graph computation (to encapsulate effects)
+    ;; NOTE: This may cause some macros to be useless outside a test-graph context. Not sure how to fix this
     ;; TODO: Consider just putting macroexpansion inside calculate/propagate?
     ;; Would require first knowing how to identify nodes in the critical path to the solution...
     (unless *graph*
@@ -593,7 +593,7 @@ and output a list of values corresponding to each of the output nodes."
 
     (funcall (:execution n) inps outs)
 
-    ;; Calculate the actual value when not in a graph computation
+    ;; Calculate the actual value when not in a test-graph computation
     (unless *graph*
       (propagate inps)
       (mapcar (lambda (out copy-out)

@@ -170,7 +170,7 @@ Note that some implementations restrict SIZE to be above/below certain values."
           ,@(unless int-at-compile
               (list `(assert (typep ,s 'integer) nil "The form ~A is not of type INTEGER!" ',size))))
         (let ((*arena* (sb-vm:new-arena ,s))))
-        (unwind-protect (progn ,@body))
+        (unwind-protect (progn ,@body (values)))
         (sb-vm:destroy-arena *arena*)))))
 
 #+sbcl
