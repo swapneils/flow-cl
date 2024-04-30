@@ -179,11 +179,11 @@ Note that some implementations restrict SIZE to be above/below certain values."
   "A form that executes its body with an arena defined by `with-temp-arena', rather than the heap.
 Returns nothing to avoid retaining arena pointers.
 Acts as a `progn' with no return if there is no active temporary arena."
-  `(let ((*in-arena* t))
-     (if *arena*
+  `(if (and *arena* (not *in-arena*))
+       (let ((*in-arena* t))
          (sb-vm:with-arena (*arena*)
-           ,@body (values))
-         (progn ,@body (values)))))
+           ,@body (values)))
+       (progn ,@body (values))))
 
 #+sbcl
 (defmacro in-heap (&body body)
