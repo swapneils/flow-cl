@@ -20,7 +20,7 @@
            #:vector-append #:vector-append!
            #:letf
            #:head #:tail
-           #:with-temp-arena #:in-arena))
+           #:with-temp-arena #:in-arena #:in-heap))
 
 (defpackage :flow-cl.lazy
   (:use :common-lisp :alexandria :iterate :flow-cl.util :lparallel)

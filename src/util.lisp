@@ -169,6 +169,7 @@ Note that some implementations restrict SIZE to be above/below certain values."
         (let ((,s ,size))
           ,@(unless int-at-compile
               (list `(assert (typep ,s 'integer) nil "The form ~A is not of type INTEGER!" ',size))))
+        (let ((*in-arena* t)))
         (let ((*arena* (sb-vm:new-arena ,s))))
         (unwind-protect (progn ,@body (values)))
         (sb-vm:destroy-arena *arena*)))))
@@ -178,17 +179,19 @@ Note that some implementations restrict SIZE to be above/below certain values."
   "A form that executes its body with an arena defined by `with-temp-arena', rather than the heap.
 Returns nothing to avoid retaining arena pointers.
 Acts as a `progn' with no return if there is no active temporary arena."
-  `(if *arena*
-       (sb-vm:with-arena (*arena*)
-         ,@body (values))
-       (progn ,@body (values))))
+  `(let ((*in-arena* t))
+     (if *arena*
+         (sb-vm:with-arena (*arena*)
+           ,@body (values))
+         (progn ,@body (values)))))
 
 #+sbcl
 (defmacro in-heap (&body body)
   "A form that escapes an `in-arena' form. Acts as a `progn' if there is no active `in-arena' form."
   `(if *in-arena*
-       (sb-vm:without-arena
-         ,@body)
+       (let ((*in-arena* nil))
+         (sb-vm:without-arena
+           ,@body))
        (progn ,@body)))
 
 #-(or sbcl)
